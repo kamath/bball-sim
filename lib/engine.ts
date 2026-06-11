@@ -12,6 +12,7 @@ import type {
   GameOpts,
   PlayCall,
   Player,
+  PlayerAssignment,
   PlayerConfig,
   Ratings,
   SimEvent,
@@ -273,6 +274,8 @@ export class Game {
   tactics!: Tactics[];
   /** play roles for the team currently on offense */
   roles!: { handler: Player | null; screener: Player | null; focus: Player | null };
+  /** fixed spacing spots from per-player assignments, keyed by player id */
+  assignTargets: Map<number, Spot> = new Map();
   screen!: { timer: number; screener: Player; handler: Player } | null;
   /** seconds of transition remaining after a live change of possession */
   fastBreak = 0;
@@ -343,6 +346,7 @@ export class Game {
       spotTimer: 0,
       rollTimer: 0,
       zoneIdx: -1,
+      annotation: null,
       stats: { pts: 0, fgm: 0, fga: 0, tpm: 0, tpa: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0 },
     } as Player;
   }
@@ -456,6 +460,13 @@ export class Game {
     const x = hoop.x > COURT.W / 2 ? COURT.W + 1.5 : -1.5;
     return { x, y: COURT.H / 2 + rand(-9, 9) };
   }
+  sidelineSpot(team: number) {
+    // Frontcourt sideline inbound (half-court set, like after a timeout).
+    const hoop = this.hoops[team];
+    const dir = hoop.x > COURT.W / 2 ? -1 : 1; // toward midcourt
+    const y = Math.random() < 0.5 ? -1.5 : COURT.H + 1.5;
+    return { x: hoop.x + dir * 19, y };
+  }
   oobSpot(p: Vec) {
     const dl = p.x,
       dr = COURT.W - p.x,
@@ -476,7 +487,14 @@ export class Game {
       this.moveAll(dt);
       this.ballFollow();
       this.deadTimer -= dt;
-      if (this.deadTimer <= 0) this.releaseInbound();
+      // don't throw it in until the inbounder is actually standing at
+      // the out-of-bounds spot (with a forced release as a backstop)
+      if (
+        this.deadTimer <= 0 &&
+        (dist(this.inb.inbounder.pos, this.inb.spot) < 2 || this.deadTimer < -4)
+      ) {
+        this.releaseInbound();
+      }
       return;
     }
     const clockOn = !(this.ball.flight && this.ball.flight.kind === "inbound");
@@ -613,6 +631,12 @@ export class Game {
   /** Play-specific off-ball assignment. Returns true if it set a target. */
   playTarget(p: Player, play: PlayCall, holder: Player | null): boolean {
     const { focus, screener } = this.roles;
+    // explicit per-player spacing job: hold that spot
+    const fixed = this.assignTargets.get(p.id);
+    if (fixed && p !== screener && p !== focus) {
+      p.moveTarget = this.spotPos(p.team, fixed);
+      return true;
+    }
     if (play === "iso" && p === focus) {
       // the iso man posts up at the top of the key waiting for the ball
       p.moveTarget = this.spotPos(p.team, { ax: 24.5, ay: 0, cat: "three" });
@@ -1648,35 +1672,70 @@ export class Game {
     if (this.lab && changed && p.team !== this.lab.team) this.labEnd();
   }
 
-  /** Choose who runs the called play for the team now on offense. */
+  /** Choose who runs the called play for the team now on offense,
+      honoring explicit per-player assignments when present. */
   setRoles(team: number) {
     const ps = this.teams[team].players;
     const t = this.tactics[team];
-    const focusPick = t.focusSlot != null ? ps[t.focusSlot] : null;
-    const handler = ps
-      .slice()
-      .sort(
-        (a, b) =>
-          b.ballHandle * 0.6 + b.iq * 0.2 + b.speed * 0.2 -
-          (a.ballHandle * 0.6 + a.iq * 0.2 + a.speed * 0.2)
-      )[0];
+    const asn = t.assignments || [];
+    const bySlot = (role: PlayerAssignment) => {
+      const i = asn.findIndex((a) => a === role);
+      return i >= 0 && ps[i] ? ps[i] : null;
+    };
+
+    // fixed spacing spots for explicitly assigned players
+    this.assignTargets.clear();
+    let cornerSide = -1,
+      wingSide = -1,
+      dunkSide = -1;
+    asn.forEach((a, i) => {
+      const p = ps[i];
+      if (!p || !a) return;
+      if (a === "corner") {
+        this.assignTargets.set(p.id, { ax: 1.5, ay: 20.5 * cornerSide, cat: "three" });
+        cornerSide *= -1;
+      } else if (a === "wing") {
+        this.assignTargets.set(p.id, { ax: 17, ay: 16 * wingSide, cat: "three" });
+        wingSide *= -1;
+      } else if (a === "top") {
+        this.assignTargets.set(p.id, { ax: 24.5, ay: 0, cat: "three" });
+      } else if (a === "dunker") {
+        this.assignTargets.set(p.id, { ax: 2.5, ay: 9 * dunkSide, cat: "inside" });
+        dunkSide *= -1;
+      }
+    });
+
+    // auto picks come from players without a fixed spacing job
+    const free = ps.filter((p) => !this.assignTargets.has(p.id));
+    const pool = free.length ? free : ps;
+    const focusPick = bySlot("focus") || (t.focusSlot != null ? ps[t.focusSlot] : null);
+    const handler =
+      bySlot("handler") ||
+      pool
+        .slice()
+        .sort(
+          (a, b) =>
+            b.ballHandle * 0.6 + b.iq * 0.2 + b.speed * 0.2 -
+            (a.ballHandle * 0.6 + a.iq * 0.2 + a.speed * 0.2)
+        )[0];
     let screener: Player | null = null;
     let focus: Player | null = focusPick;
     if (t.play === "pnr") {
       screener =
-        focusPick && focusPick !== handler
+        bySlot("screener") ||
+        (focusPick && focusPick !== handler
           ? focusPick
-          : ps
+          : pool
               .filter((p) => p !== handler)
               .sort(
                 (a, b) =>
                   b.heightIn * 1.5 + b.strength * 0.5 - (a.heightIn * 1.5 + a.strength * 0.5)
-              )[0];
+              )[0] || null);
       focus = null;
     } else if (t.play === "iso" && !focus) {
-      focus = ps.slice().sort((a, b) => offThreat(b) - offThreat(a))[0];
+      focus = pool.slice().sort((a, b) => offThreat(b) - offThreat(a))[0];
     } else if (t.play === "post" && !focus) {
-      focus = ps
+      focus = pool
         .slice()
         .sort(
           (a, b) =>
@@ -1685,6 +1744,33 @@ export class Game {
         )[0];
     }
     this.roles = { handler, screener, focus };
+    this.annotate(team);
+  }
+
+  /** Court labels for each player's job — only drawn in lab mode. */
+  annotate(team: number) {
+    for (const t of this.teams) for (const p of t.players) p.annotation = null;
+    if (!this.lab || this.lab.team !== team) return;
+    const t = this.tactics[team];
+    const ps = this.teams[team].players;
+    const SPOT_LABELS: Partial<Record<PlayerAssignment, string>> = {
+      corner: "CORNER",
+      wing: "WING",
+      top: "TOP",
+      dunker: "DUNKER",
+    };
+    (t.assignments || []).forEach((a, i) => {
+      if (a && ps[i] && SPOT_LABELS[a]) ps[i].annotation = SPOT_LABELS[a]!;
+    });
+    const { handler, screener, focus } = this.roles;
+    if (focus && !focus.annotation) {
+      focus.annotation = t.play === "iso" ? "ISO" : t.play === "post" ? "POST" : "GO-TO";
+    }
+    if (screener && !screener.annotation) screener.annotation = "SCREENER";
+    if (handler && !handler.annotation) handler.annotation = "HANDLER";
+    if (t.play !== "motion") {
+      for (const p of ps) if (!p.annotation) p.annotation = "SPACE";
+    }
   }
 
   shotClockViolation() {
@@ -1725,18 +1811,29 @@ export class Game {
       }
     }
     const tp = this.teams[team].players;
-    let inb = tp[0];
-    for (const p of tp) if (dist(p.pos, spot) < dist(inb.pos, spot)) inb = p;
+    // the designated handler should be receiving, not throwing it in
+    const inbCands = tp.filter((p) => p !== this.roles.handler);
+    let inb = inbCands[0] || tp[0];
+    for (const p of inbCands) if (dist(p.pos, spot) < dist(inb.pos, spot)) inb = p;
     inb.allowOOB = true;
     inb.moveTarget = { ...spot };
     const rest = tp.filter((p) => p !== inb);
-    const recv = rest.slice().sort((a, b) => b.iq - a.iq)[0];
+    // the designated ball handler takes the inbound when he can
+    const recv =
+      this.roles.handler && rest.includes(this.roles.handler)
+        ? this.roles.handler
+        : rest.slice().sort((a, b) => b.iq - a.iq)[0];
     recv.moveTarget = {
       x: clamp(spot.x + (COURT.W / 2 - spot.x) * 0.18, 3, COURT.W - 3),
       y: clamp(spot.y + (COURT.H / 2 - spot.y) * 0.3 + rand(-3, 3), 3, COURT.H - 3),
     };
     for (const p of rest) {
       if (p === recv) continue;
+      const fixed = this.assignTargets.get(p.id);
+      if (fixed) {
+        p.moveTarget = this.spotPos(p.team, fixed);
+        continue;
+      }
       this.assignSpot(p);
       p.moveTarget = this.spotPos(p.team, SPOTS[p.spotIdx]);
     }
@@ -1775,12 +1872,16 @@ export class Game {
   };
 
   /** Run a single scripted possession: offense runs `play`, defense
-      plays `defScheme`. The sim freezes when the possession ends. */
+      plays `defScheme`. Starts from a clean inbound formation — full
+      court (own baseline) or half court (frontcourt sideline). The
+      sim freezes when the possession ends. */
   runPossession(opts: {
     offense: number;
     play: PlayCall;
     defScheme: DefScheme;
     focusSlot?: number | null;
+    start?: "full" | "half";
+    assignments?: (PlayerAssignment | null)[];
   }) {
     if (this.over) return;
     this.lab = { team: opts.offense };
@@ -1788,6 +1889,7 @@ export class Game {
     this.labPending = null;
     this.tactics[opts.offense].play = opts.play;
     this.tactics[opts.offense].focusSlot = opts.focusSlot ?? null;
+    this.tactics[opts.offense].assignments = opts.assignments;
     this.tactics[1 - opts.offense].defScheme = opts.defScheme;
     if (this.gameClock < 35) this.gameClock = 35; // room to run the play
     this.emit(
@@ -1795,7 +1897,26 @@ export class Game {
       `LAB — ${this.teams[opts.offense].name} run ${Game.PLAY_LABELS[opts.play]} against ${Game.SCHEME_LABELS[opts.defScheme]}`,
       null
     );
-    this.setupInbound(opts.offense, this.baselineSpot(opts.offense), { sc: 24 });
+    const spot =
+      opts.start === "half" ? this.sidelineSpot(opts.offense) : this.baselineSpot(opts.offense);
+    this.setupInbound(opts.offense, spot, { sc: 24 });
+    // drill-style start: snap everyone straight into formation instead
+    // of jogging there, so the inbound always looks traditional
+    this.deadTimer = rand(0.8, 1.2);
+    for (const p of this.teams[opts.offense].players) {
+      if (p.moveTarget) {
+        p.pos = { ...p.moveTarget };
+        p.vel = { x: 0, y: 0 };
+      }
+    }
+    this.updateDefense(); // compute defensive shape against the set offense
+    for (const p of this.teams[1 - opts.offense].players) {
+      if (p.moveTarget) {
+        p.pos = { ...p.moveTarget };
+        p.vel = { x: 0, y: 0 };
+      }
+    }
+    this.ballFollow();
   }
 
   labEnd() {

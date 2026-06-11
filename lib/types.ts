@@ -45,11 +45,23 @@ export type PlayCall = "motion" | "iso" | "pnr" | "post";
 /** Defensive scheme for a possession. */
 export type DefScheme = "man" | "switch" | "zone";
 
+/** A job given to one offensive player for a scripted possession. */
+export type PlayerAssignment =
+  | "handler"
+  | "screener"
+  | "focus"
+  | "corner"
+  | "wing"
+  | "top"
+  | "dunker";
+
 export interface Tactics {
   play: PlayCall;
   defScheme: DefScheme;
   /** roster slot the play runs through (iso/post/pnr screener); null = auto */
   focusSlot: number | null;
+  /** per-roster-slot jobs (lab mode); null/missing = auto */
+  assignments?: (PlayerAssignment | null)[];
 }
 
 /**
@@ -126,6 +138,8 @@ export interface Player extends Ratings {
   rollTimer: number;
   /** assigned slot in a zone defense, -1 when unassigned */
   zoneIdx: number;
+  /** role label drawn on the court during lab possessions */
+  annotation: string | null;
   stats: PlayerStats;
 }
 

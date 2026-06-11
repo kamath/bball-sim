@@ -70,6 +70,7 @@ export function Simulator({ initialConfig, teams }: SimulatorProps) {
               <PossessionLab
                 teams={game.boxTeams}
                 snapshot={snapshot}
+                events={game.labEvents}
                 onRun={game.runPossession}
                 onResume={game.resumeGame}
               />

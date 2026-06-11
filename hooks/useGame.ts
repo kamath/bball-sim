@@ -8,7 +8,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Game, fmtClock } from "@/lib/engine";
 import { Renderer } from "@/lib/renderer";
-import type { DefScheme, GameConfig, PlayCall, Player, SimEvent } from "@/lib/types";
+import type {
+  DefScheme,
+  GameConfig,
+  PlayCall,
+  Player,
+  PlayerAssignment,
+  SimEvent,
+} from "@/lib/types";
 
 export interface Snapshot {
   scores: [number, number];
@@ -27,7 +34,8 @@ export interface PossessionOpts {
   offense: number;
   play: PlayCall;
   defScheme: DefScheme;
-  focusSlot?: number | null;
+  start: "full" | "half";
+  assignments: (PlayerAssignment | null)[];
 }
 
 export interface BoxPlayer {
@@ -58,6 +66,11 @@ const emptySnapshot = (): Snapshot => ({
 export function useGame(initialConfig: GameConfig) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const gameRef = useRef<Game | null>(null);
+  // lab mode runs on its own sandboxed Game so the real game's score,
+  // stats, and clock are untouched
+  const labGameRef = useRef<Game | null>(null);
+  const modeRef = useRef<"game" | "lab">("game");
+  const labReadyRef = useRef(false);
   const rendererRef = useRef<Renderer | null>(null);
   const configRef = useRef<GameConfig>(initialConfig);
   const playingRef = useRef(true);
@@ -66,6 +79,7 @@ export function useGame(initialConfig: GameConfig) {
 
   const [snapshot, setSnapshot] = useState<Snapshot>(emptySnapshot);
   const [events, setEvents] = useState<SimEvent[]>([]);
+  const [labEvents, setLabEvents] = useState<SimEvent[]>([]);
   const [boxTeams, setBoxTeams] = useState<BoxTeam[]>([]);
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeedState] = useState(2);
@@ -104,6 +118,10 @@ export function useGame(initialConfig: GameConfig) {
         onEvent: (e) => setEvents((prev) => (prev.length > 250 ? [e, ...prev.slice(0, 250)] : [e, ...prev])),
       });
       gameRef.current = game;
+      // a new game always exits the lab
+      modeRef.current = "game";
+      labGameRef.current = null;
+      setLabEvents([]);
       rendererRef.current?.setTeams([cfg.teamA.color, cfg.teamB.color]);
       setSnapshot(sampleSnapshot(game));
       setBoxTeams(sampleBox(game));
@@ -129,7 +147,8 @@ export function useGame(initialConfig: GameConfig) {
     let boxAccum = 0;
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
-      const game = gameRef.current;
+      const inLab = modeRef.current === "lab" && labGameRef.current;
+      const game = inLab ? labGameRef.current! : gameRef.current;
       const renderer = rendererRef.current;
       if (!game || !renderer) return;
       const last = lastTRef.current || now;
@@ -154,7 +173,8 @@ export function useGame(initialConfig: GameConfig) {
       boxAccum += real;
       if (boxAccum > 0.25) {
         boxAccum = 0;
-        setBoxTeams(sampleBox(game));
+        // box score always reflects the real game, not the lab sandbox
+        if (gameRef.current) setBoxTeams(sampleBox(gameRef.current));
       }
     };
     raf = requestAnimationFrame(frame);
@@ -171,26 +191,35 @@ export function useGame(initialConfig: GameConfig) {
     setSpeedState(s);
   }, []);
 
-  /** Lab mode: run one scripted possession, then the sim freezes. */
+  /** Lab mode: build a fresh sandboxed game (real game untouched) and
+      run one scripted possession in it; the sandbox freezes at the end. */
   const runPossession = useCallback(
     (opts: PossessionOpts) => {
-      const game = gameRef.current;
-      if (!game) return;
-      game.runPossession(opts);
+      labReadyRef.current = false; // mute the sandbox's tip-off chatter
+      const lab = new Game(configRef.current, {
+        onEvent: (e) => {
+          if (!labReadyRef.current) return;
+          setLabEvents((prev) => (prev.length > 100 ? [e, ...prev.slice(0, 100)] : [e, ...prev]));
+        },
+      });
+      labGameRef.current = lab;
+      setLabEvents([]);
+      labReadyRef.current = true;
+      lab.runPossession(opts);
+      modeRef.current = "lab";
       playingRef.current = true;
       setPlaying(true);
-      setSnapshot(sampleSnapshot(game));
+      setSnapshot(sampleSnapshot(lab));
     },
     [sampleSnapshot]
   );
 
+  /** Leave the lab; the real game continues exactly where it was. */
   const resumeGame = useCallback(() => {
+    modeRef.current = "game";
+    labGameRef.current = null;
     const game = gameRef.current;
-    if (!game) return;
-    game.resumeGame();
-    playingRef.current = true;
-    setPlaying(true);
-    setSnapshot(sampleSnapshot(game));
+    if (game) setSnapshot(sampleSnapshot(game));
   }, [sampleSnapshot]);
 
   /** Mutate a live player's field in place (engine reads the same object). */
@@ -209,6 +238,7 @@ export function useGame(initialConfig: GameConfig) {
     canvasRef,
     snapshot,
     events,
+    labEvents,
     boxTeams,
     playing,
     speed,

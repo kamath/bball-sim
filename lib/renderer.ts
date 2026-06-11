@@ -232,6 +232,14 @@ export class Renderer {
         c.fillText(last, x + 0.5, y + r + 9.5);
         c.fillStyle = "rgba(255,250,240,0.95)";
         c.fillText(last, x, y + r + 9);
+        // lab mode: each player's job in the called play
+        if (game.lab && p.annotation) {
+          c.font = `700 8px 'Spline Sans Mono', monospace`;
+          c.fillStyle = "rgba(20,12,4,0.9)";
+          c.fillText(p.annotation, x + 0.5, y - r - 5.5);
+          c.fillStyle = "rgba(255,210,110,0.95)";
+          c.fillText(p.annotation, x, y - r - 6);
+        }
         c.textBaseline = "alphabetic";
       }
     }

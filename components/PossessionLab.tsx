@@ -1,9 +1,9 @@
 "use client";
 /* ============================================================
-   PossessionLab — script a single possession: pick who has the
-   ball, what play they run, and what defense they see, then
-   watch it on the court. The sim freezes when the possession
-   ends so you can run it back or resume the full game.
+   PossessionLab — script a single possession in a sandboxed
+   game (the real game is untouched): pick the play, the
+   coverage, where the inbound starts, and a job for each
+   player. The sandbox freezes when the possession ends.
    ============================================================ */
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -15,8 +15,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import type { BoxTeam, PossessionOpts, Snapshot } from "@/hooks/useGame";
-import type { DefScheme, PlayCall } from "@/lib/types";
+import type { DefScheme, PlayCall, PlayerAssignment, SimEvent } from "@/lib/types";
 
 const PLAYS: { value: PlayCall; label: string; blurb: string }[] = [
   { value: "motion", label: "Motion", blurb: "free-flowing offense, everyone hunts a spot" },
@@ -31,30 +32,56 @@ const SCHEMES: { value: DefScheme; label: string; blurb: string }[] = [
   { value: "zone", label: "2-3 Zone", blurb: "guard your area, pack the paint" },
 ];
 
+const ASSIGNMENTS: { value: PlayerAssignment | "auto"; label: string }[] = [
+  { value: "auto", label: "Auto" },
+  { value: "handler", label: "Ball handler" },
+  { value: "screener", label: "Screener" },
+  { value: "focus", label: "Go-to guy" },
+  { value: "corner", label: "Corner" },
+  { value: "wing", label: "Wing" },
+  { value: "top", label: "Top of key" },
+  { value: "dunker", label: "Dunker spot" },
+];
+
 interface PossessionLabProps {
   teams: BoxTeam[];
   snapshot: Snapshot;
+  events: SimEvent[];
   onRun: (opts: PossessionOpts) => void;
   onResume: () => void;
 }
 
-export function PossessionLab({ teams, snapshot, onRun, onResume }: PossessionLabProps) {
+export function PossessionLab({ teams, snapshot, events, onRun, onResume }: PossessionLabProps) {
   const [offense, setOffense] = useState(0);
   const [play, setPlay] = useState<PlayCall>("pnr");
   const [scheme, setScheme] = useState<DefScheme>("man");
-  const [focusSlot, setFocusSlot] = useState<string>("auto");
+  const [start, setStart] = useState<"full" | "half">("half");
+  const [assignments, setAssignments] = useState<(PlayerAssignment | "auto")[]>(
+    Array(5).fill("auto")
+  );
 
   if (teams.length < 2) return null;
   const offTeam = teams[offense];
   const playMeta = PLAYS.find((p) => p.value === play)!;
   const schemeMeta = SCHEMES.find((s) => s.value === scheme)!;
-  const focusLabel = play === "pnr" ? "Screener" : play === "post" ? "Post man" : "Go-to guy";
+
+  const setAssignment = (slot: number, v: PlayerAssignment | "auto") => {
+    setAssignments((prev) => {
+      const next = [...prev];
+      // unique roles: claiming handler/screener/focus releases it elsewhere
+      if (v === "handler" || v === "screener" || v === "focus") {
+        for (let i = 0; i < next.length; i++) if (next[i] === v) next[i] = "auto";
+      }
+      next[slot] = v;
+      return next;
+    });
+  };
 
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">
-        Script one possession: pick the play and the coverage, then watch it unfold on the
-        court. The sim pauses when the possession ends.
+        Script one possession in a sandbox — the real game is paused and untouched. Pick the
+        play, the coverage, and a job for each player, then watch it unfold.
       </p>
 
       <div className="flex flex-col gap-1.5">
@@ -67,13 +94,33 @@ export function PossessionLab({ teams, snapshot, onRun, onResume }: PossessionLa
               variant={offense === ti ? "secondary" : "outline"}
               onClick={() => {
                 setOffense(ti);
-                setFocusSlot("auto");
+                setAssignments(Array(5).fill("auto"));
               }}
             >
               <span className="mr-1.5 size-2.5 rounded-full" style={{ background: t.color }} />
               {t.name}
             </Button>
           ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label>Inbound from</Label>
+        <div className="flex gap-1.5">
+          <Button
+            size="sm"
+            variant={start === "half" ? "secondary" : "outline"}
+            onClick={() => setStart("half")}
+          >
+            Half court (sideline)
+          </Button>
+          <Button
+            size="sm"
+            variant={start === "full" ? "secondary" : "outline"}
+            onClick={() => setStart("full")}
+          >
+            Full court (baseline)
+          </Button>
         </div>
       </div>
 
@@ -94,25 +141,6 @@ export function PossessionLab({ teams, snapshot, onRun, onResume }: PossessionLa
         <p className="text-xs text-muted-foreground">{playMeta.blurb}</p>
       </div>
 
-      {play !== "motion" && (
-        <div className="flex flex-col gap-1.5">
-          <Label>{focusLabel}</Label>
-          <Select value={focusSlot} onValueChange={setFocusSlot}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="auto">Auto (best fit)</SelectItem>
-              {offTeam.players.map((bp, slot) => (
-                <SelectItem key={bp.id} value={String(slot)}>
-                  #{bp.number} {bp.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-
       <div className="flex flex-col gap-1.5">
         <Label>Defense ({teams[1 - offense].name})</Label>
         <Select value={scheme} onValueChange={(v) => setScheme(v as DefScheme)}>
@@ -130,6 +158,35 @@ export function PossessionLab({ teams, snapshot, onRun, onResume }: PossessionLa
         <p className="text-xs text-muted-foreground">{schemeMeta.blurb}</p>
       </div>
 
+      <div className="flex flex-col gap-2">
+        <Label>Player jobs</Label>
+        {offTeam.players.map((bp, slot) => (
+          <div key={bp.id} className="flex items-center gap-2">
+            <span className="w-36 truncate text-sm">
+              #{bp.number} {bp.name.split(" ").slice(-1)[0]}
+            </span>
+            <Select
+              value={assignments[slot]}
+              onValueChange={(v) => setAssignment(slot, v as PlayerAssignment | "auto")}
+            >
+              <SelectTrigger className="h-8 flex-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ASSIGNMENTS.map((a) => (
+                  <SelectItem key={a.value} value={a.value}>
+                    {a.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ))}
+        <p className="text-xs text-muted-foreground">
+          Jobs are drawn on the court next to each player during the possession.
+        </p>
+      </div>
+
       <div className="flex gap-2">
         <Button
           onClick={() =>
@@ -137,28 +194,40 @@ export function PossessionLab({ teams, snapshot, onRun, onResume }: PossessionLa
               offense,
               play,
               defScheme: scheme,
-              focusSlot: focusSlot === "auto" ? null : Number(focusSlot),
+              start,
+              assignments: assignments.map((a) => (a === "auto" ? null : a)),
             })
           }
         >
-          {snapshot.labFrozen ? "Run it again" : "Run possession"}
+          {snapshot.labActive ? "Run it again" : "Run possession"}
         </Button>
         {snapshot.labActive && (
           <Button variant="outline" onClick={onResume}>
-            Resume full game
+            Back to game
           </Button>
         )}
       </div>
 
-      {snapshot.labActive && !snapshot.labFrozen && (
-        <p className="text-xs text-muted-foreground">
-          Possession in progress — follow it on the court and in the play-by-play.
-        </p>
-      )}
-      {snapshot.labFrozen && (
-        <p className="text-xs text-muted-foreground">
-          Possession over. Check the play-by-play, run another, or resume the game.
-        </p>
+      {snapshot.labActive && (
+        <div className="flex flex-col gap-1.5">
+          <Label>Possession play-by-play</Label>
+          <div className="flex flex-col rounded-md border">
+            {events.length === 0 && (
+              <div className="px-3 py-2 text-sm text-muted-foreground">Setting it up…</div>
+            )}
+            {events.map((e, i) => (
+              <div
+                key={i}
+                className={cn(
+                  "px-3 py-1.5 text-sm",
+                  (e.type === "pass" || e.type === "info") && "text-muted-foreground"
+                )}
+              >
+                {e.text}
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
