@@ -85,7 +85,8 @@ export function RosterEditor({ teams, onEdit }: RosterEditorProps) {
 
       {teams.map((t, ti) => (
         <div key={ti} className="flex flex-col gap-1.5">
-          <h4 className="font-display text-sm font-bold" style={{ color: t.color }}>
+          <h4 className="flex items-center gap-2 text-sm font-semibold">
+            <span className="size-2.5 rounded-full" style={{ background: t.color }} />
             {t.name}
           </h4>
           <div className="flex flex-wrap gap-1.5">
@@ -96,7 +97,6 @@ export function RosterEditor({ teams, onEdit }: RosterEditorProps) {
                   key={bp.id}
                   size="sm"
                   variant={on ? "secondary" : "outline"}
-                  className={cn("h-7", on && "font-bold")}
                   onClick={() => setSel({ ti, slot })}
                 >
                   #{bp.number} {bp.name.split(" ").slice(-1)[0]}
@@ -138,7 +138,7 @@ export function RosterEditor({ teams, onEdit }: RosterEditorProps) {
 
       {SECTIONS.map(([title, rows]) => (
         <div key={title} className="flex flex-col gap-3">
-          <h4 className="font-display text-xs font-bold tracking-widest text-muted-foreground">
+          <h4 className="text-xs font-medium text-muted-foreground">
             {title}
           </h4>
           {rows.map(([key, label, min, max, fmt]) => {
@@ -147,7 +147,7 @@ export function RosterEditor({ teams, onEdit }: RosterEditorProps) {
               <div key={String(key)} className="flex flex-col gap-1">
                 <div className="flex items-center justify-between text-sm">
                   <Label>{label}</Label>
-                  <span className="font-mono tabular-nums text-muted-foreground">
+                  <span className="tabular-nums text-muted-foreground">
                     {fmt ? fmt(val) : val}
                   </span>
                 </div>
@@ -164,16 +164,14 @@ export function RosterEditor({ teams, onEdit }: RosterEditorProps) {
       ))}
 
       <div className="flex flex-col gap-3">
-        <h4 className="font-display text-xs font-bold tracking-widest text-muted-foreground">
-          TENDENCIES
-        </h4>
+        <h4 className="text-xs font-medium text-muted-foreground">TENDENCIES</h4>
         {TENDENCIES.map(([key, label]) => {
           const val = player.tend[key];
           return (
             <div key={key} className="flex flex-col gap-1">
               <div className="flex items-center justify-between text-sm">
                 <Label>{label}</Label>
-                <span className="font-mono tabular-nums text-muted-foreground">{val}</span>
+                <span className="tabular-nums text-muted-foreground">{val}</span>
               </div>
               <Slider min={1} max={99} value={[val]} onValueChange={([v]) => setTend(key, v)} />
             </div>

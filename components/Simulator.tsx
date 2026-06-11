@@ -24,14 +24,11 @@ export function Simulator({ initialConfig, teams }: SimulatorProps) {
   return (
     <div className="mx-auto flex max-w-[1400px] flex-col gap-4 p-4">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="size-2.5 animate-pulse rounded-full bg-destructive" />
-        <span className="font-display text-xl font-extrabold tracking-widest">FABLE FIELDHOUSE</span>
-        <span className="text-xs font-semibold tracking-widest text-muted-foreground">
-          LIVE SIMULATION
-        </span>
+        <h1 className="text-xl font-semibold">Fable Fieldhouse</h1>
+        <span className="text-sm text-muted-foreground">Live Simulation</span>
         {names.length === 2 && (
-          <span className="ml-auto font-mono text-sm text-muted-foreground">
-            {names[0].name} <em className="not-italic">vs</em> {names[1].name}
+          <span className="ml-auto text-sm text-muted-foreground">
+            {names[0].name} vs {names[1].name}
           </span>
         )}
       </header>

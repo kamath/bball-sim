@@ -1,7 +1,6 @@
 "use client";
 import { Pause, Play, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 const SPEEDS = [1, 2, 4, 8, 16];
 
@@ -30,14 +29,13 @@ export function Court({
           {playing ? <Pause data-icon="inline-start" /> : <Play data-icon="inline-start" />}
           {playing ? "Pause" : "Play"}
         </Button>
-        <div className="flex items-center gap-1 rounded-md border border-border p-1">
-          <span className="px-2 text-xs text-muted-foreground">SPEED</span>
+        <div className="flex items-center gap-1 rounded-md border p-1">
+          <span className="px-2 text-xs text-muted-foreground">Speed</span>
           {SPEEDS.map((s) => (
             <Button
               key={s}
               size="sm"
               variant={speed === s ? "secondary" : "ghost"}
-              className={cn("h-7 px-2 tabular-nums", speed === s && "font-bold")}
               onClick={() => onSetSpeed(s)}
             >
               {s}×

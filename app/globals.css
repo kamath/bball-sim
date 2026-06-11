@@ -58,11 +58,10 @@
   }
 }
 
-/* ===== The ONLY non-shadcn styling: the canvas court element ===== */
-/* The renderer handles all drawing; it just needs a sized, block element. */
+/* The renderer draws everything; the canvas just needs to be a responsive
+   block element. */
 .court-canvas {
   display: block;
   width: 100%;
   height: auto;
-  border-radius: var(--radius);
 }
