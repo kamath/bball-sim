@@ -11,7 +11,6 @@ import type {
   GameConfig,
   GameOpts,
   InboundLoc,
-  PathMode,
   PlayCall,
   Player,
   PlayerAssignment,
@@ -2073,7 +2072,6 @@ export class Game {
     start?: InboundLoc;
     assignments?: (PlayerAssignment | null)[];
     inbounderSlot?: number | null;
-    pathModes?: PathMode[];
   }) {
     if (this.over) return;
     this.lab = { team: opts.offense };
@@ -2109,47 +2107,24 @@ export class Game {
       }
     }
     this.ballFollow();
-    // seed each off-ball player with a default route for the play, so the
-    // designer opens with editable arrows instead of a blank floor
-    this.labDefaultPaths(opts.offense, opts.play, opts.pathModes);
+    // seed editable arrows for the players the play moves; the rest open clean
+    this.labDefaultPaths(opts.offense, opts.play);
   }
 
-  /** Default motion routes for a scripted possession — one editable path per
-      off-ball offensive player, shaped by the play. The ball-handler drives,
-      so he gets none. `modes` (per roster slot) carries each route's end
-      behavior across a re-stage. Re-run whenever the play (re)stages. */
-  labDefaultPaths(team: number, play: PlayCall, modes?: PathMode[]) {
+  /** Default motion routes for a scripted possession — an editable path only
+      for the players the play actually moves (the screener's roll, the go-to
+      guy's cut, anyone given a fixed spot). The ball-handler drives and the
+      supporting cast just spaces, so they open with no arrow and flow with the
+      offense. Re-run whenever the play (re)stages. */
+  labDefaultPaths(team: number, play: PlayCall) {
     const ps = this.teams[team].players;
     const { handler, screener, focus } = this.roles;
     const hoop = this.hoops[team];
     const rim = this.spotPos(team, { ax: 3, ay: 0, cat: "inside" });
-    // perimeter spacing spots to spread the supporting cast across, by play
-    const spacing: Spot[] =
-      play === "motion"
-        ? [
-            { ax: 17, ay: -16, cat: "three" },
-            { ax: 17, ay: 16, cat: "three" },
-            { ax: 1.5, ay: -20.5, cat: "three" },
-            { ax: 1.5, ay: 20.5, cat: "three" },
-          ]
-        : [
-            { ax: 1.5, ay: -20.5, cat: "three" },
-            { ax: 1.5, ay: 20.5, cat: "three" },
-            { ax: 17, ay: -16, cat: "three" },
-            { ax: 17, ay: 16, cat: "three" },
-            { ax: 24.5, ay: 0, cat: "three" },
-          ];
-    const pool = spacing.map((s) => this.spotPos(team, s));
-    const takeNearest = (from: Vec): Vec => {
-      let bi = 0;
-      for (let i = 1; i < pool.length; i++)
-        if (dist(pool[i], from) < dist(pool[bi], from)) bi = i;
-      return pool.splice(bi, 1)[0] ?? rim;
-    };
-    ps.forEach((p, slot) => {
+    ps.forEach((p) => {
       p.path = null;
       p.pathIdx = 0;
-      p.pathHold = modes ? modes[slot] !== "flow" : true;
+      p.pathHold = true;
       if (p === handler) return; // he'll have the ball
       const side = p.pos.y >= COURT.H / 2 ? 1 : -1;
       const route: Vec[] = [{ x: p.pos.x, y: p.pos.y }];
@@ -2171,8 +2146,6 @@ export class Game {
         // come off toward the handoff, then turn the corner to the rim
         route.push(this.spotPos(team, { ax: 17, ay: side * 14, cat: "three" }));
         route.push(rim);
-      } else {
-        route.push(takeNearest(p.pos));
       }
       if (route.length >= 2) {
         p.path = route;

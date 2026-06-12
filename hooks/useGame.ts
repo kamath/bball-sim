@@ -12,7 +12,6 @@ import type {
   DefScheme,
   GameConfig,
   InboundLoc,
-  PathMode,
   PlayCall,
   Player,
   PlayerAssignment,
@@ -43,7 +42,6 @@ export interface PossessionOpts {
   start: InboundLoc;
   assignments: (PlayerAssignment | null)[];
   inbounder: number | null;
-  pathModes: PathMode[];
 }
 
 export interface BoxPlayer {
@@ -388,15 +386,6 @@ export function useGame(initialConfig: GameConfig) {
     [sampleSnapshot]
   );
 
-  /** Set a staged player's route-end behavior in place (no re-stage, so any
-      authored routes survive). `flow` = rejoin the offense after the route. */
-  const setPathMode = useCallback((slot: number, mode: PathMode) => {
-    const lab = labGameRef.current;
-    if (!lab) return;
-    const p = lab.teams[lab.possession]?.players[slot];
-    if (p) p.pathHold = mode !== "flow";
-  }, []);
-
   /** Leave the lab; the real game continues exactly where it was. */
   const exitLab = useCallback(() => {
     modeRef.current = "game";
@@ -443,7 +432,6 @@ export function useGame(initialConfig: GameConfig) {
     clearLabPaths,
     setLabTool,
     setLabDefense,
-    setPathMode,
     getConfig: () => configRef.current,
   };
 }

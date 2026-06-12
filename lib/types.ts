@@ -55,9 +55,6 @@ export type InboundLoc =
   | "base-top"
   | "base-bot";
 
-/** What a player does once he finishes his authored route. */
-export type PathMode = "stay" | "flow";
-
 /** A job given to one offensive player for a scripted possession. */
 export type PlayerAssignment =
   | "handler"

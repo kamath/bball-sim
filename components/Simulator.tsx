@@ -96,7 +96,6 @@ export function Simulator({ initialConfig, teams }: SimulatorProps) {
               onRun={game.runLab}
               onToolChange={game.setLabTool}
               onClearPaths={game.clearLabPaths}
-              onSetPathMode={game.setPathMode}
               onSetDefense={game.setLabDefense}
             />
           </ScrollArea>

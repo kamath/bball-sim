@@ -8,7 +8,7 @@
    and untouched the whole time.
    ============================================================ */
 import { useEffect, useRef, useState } from "react";
-import { MousePointer2, PenLine, Eraser, Flag, Repeat } from "lucide-react";
+import { MousePointer2, PenLine, Eraser } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { BoxTeam, LabPhase, LabTool, PossessionOpts, Snapshot } from "@/hooks/useGame";
-import type { DefScheme, InboundLoc, PathMode, PlayCall, PlayerAssignment, SimEvent } from "@/lib/types";
+import type { DefScheme, InboundLoc, PlayCall, PlayerAssignment, SimEvent } from "@/lib/types";
 
 const PLAYS: { value: PlayCall; label: string; blurb: string }[] = [
   { value: "motion", label: "Motion", blurb: "free-flowing offense, everyone hunts a spot" },
@@ -83,7 +83,6 @@ interface PossessionLabProps {
   onRun: () => void;
   onToolChange: (t: LabTool) => void;
   onClearPaths: () => void;
-  onSetPathMode: (slot: number, mode: PathMode) => void;
   onSetDefense: (scheme: DefScheme) => void;
 }
 
@@ -99,7 +98,6 @@ export function PossessionLab({
   onRun,
   onToolChange,
   onClearPaths,
-  onSetPathMode,
   onSetDefense,
 }: PossessionLabProps) {
   const [offense, setOffense] = useState(0);
@@ -110,14 +108,11 @@ export function PossessionLab({
     Array(5).fill("auto")
   );
   const [inbounder, setInbounder] = useState<number | "auto">("auto");
-  const [pathModes, setPathModes] = useState<PathMode[]>(Array(5).fill("stay"));
   const [rev, setRev] = useState(0); // bump to re-stage with same options
 
-  // route-end modes and the defensive scheme ride along on re-stages but must
-  // NOT trigger one (that would re-randomize the offense and wipe authored
-  // routes); refs carry the latest values into onStage.
-  const pathModesRef = useRef(pathModes);
-  pathModesRef.current = pathModes;
+  // the defensive scheme rides along on re-stages but must NOT trigger one
+  // (that would re-randomize the offense and wipe authored routes); a ref
+  // carries the latest value into onStage.
   const schemeRef = useRef(scheme);
   schemeRef.current = scheme;
 
@@ -133,18 +128,8 @@ export function PossessionLab({
       start,
       assignments: assignments.map((a) => (a === "auto" ? null : a)),
       inbounder: inbounder === "auto" ? null : inbounder,
-      pathModes: pathModesRef.current,
     });
   }, [offense, play, start, assignments, inbounder, rev, onStage]);
-
-  const setPathMode = (slot: number, mode: PathMode) => {
-    setPathModes((prev) => {
-      const next = [...prev];
-      next[slot] = mode;
-      return next;
-    });
-    onSetPathMode(slot, mode); // mutate the live route in place — no re-stage
-  };
 
   if (teams.length < 2) return null;
   // config controls are live only while configuring; confirming locks them so
@@ -182,7 +167,6 @@ export function PossessionLab({
                   setOffense(ti);
                   setAssignments(Array(5).fill("auto"));
                   setInbounder("auto");
-                  setPathModes(Array(5).fill("stay"));
                 }}
               >
                 <span className="mr-1.5 size-2.5 rounded-full" style={{ background: t.color }} />
@@ -305,28 +289,11 @@ export function PossessionLab({
                 ))}
               </SelectContent>
             </Select>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 w-[6.5rem] shrink-0 justify-start"
-              title="What this player does at the end of his route"
-              onClick={() => setPathMode(slot, pathModes[slot] === "stay" ? "flow" : "stay")}
-            >
-              {pathModes[slot] === "stay" ? (
-                <>
-                  <Flag className="mr-1.5 size-3.5" /> Stay
-                </>
-              ) : (
-                <>
-                  <Repeat className="mr-1.5 size-3.5" /> Flow
-                </>
-              )}
-            </Button>
           </div>
         ))}
         <p className="text-xs text-muted-foreground">
-          Route end — <span className="font-medium">Stay</span> holds the spot,{" "}
-          <span className="font-medium">Flow</span> rejoins the offense and keeps moving.
+          Routes are drawn for the players the play moves. Use{" "}
+          <span className="font-medium">Draw path</span> below to add or reshape one.
         </p>
       </div>
 
