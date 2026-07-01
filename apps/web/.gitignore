@@ -1,0 +1,4 @@
+# vite
+dist/
+# tanstack router — generated
+src/routeTree.gen.ts

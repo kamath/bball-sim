@@ -8,12 +8,14 @@
     "dev:web": "pnpm --filter @repo/web dev",
     "dev:backend": "pnpm --filter @repo/backend dev",
     "build": "pnpm --filter @repo/web build",
+    "preview": "pnpm --filter @repo/web preview",
     "deploy:backend": "pnpm --filter @repo/backend deploy",
-    "start": "pnpm --filter @repo/web start",
-    "lint": "pnpm --filter @repo/web lint",
     "typecheck": "pnpm -r --if-present typecheck"
   },
   "devDependencies": {
     "typescript": "^5.7.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "workerd"]
   }
 }

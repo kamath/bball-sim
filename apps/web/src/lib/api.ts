@@ -14,8 +14,8 @@ import type { BuildMatchupInput, CompileRequest } from "@repo/shared";
 
 /** Origin of the backend Worker that hosts the API. The /api base path is
     baked into the route types, so this is just the origin. Configure per
-    environment via NEXT_PUBLIC_API_URL; defaults to the local `wrangler dev`. */
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8787";
+    environment via VITE_API_URL; defaults to the local `wrangler dev`. */
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8787";
 
 /** Typed Hono RPC client bound to the backend origin. */
 export const api = createApiClient(API_BASE_URL);
