@@ -49,9 +49,13 @@ const ACTION_TYPES: { value: PlanActionType; label: string }[] = [
   { value: "iso", label: "Iso" },
   { value: "postUp", label: "Post up" },
 ];
-const TEND_KEYS: (keyof Tendencies)[] = [
+const ALL_TENDS: (keyof Tendencies)[] = [
   "shoot", "three", "drive", "pass", "kickout", "help", "crash", "gamble",
 ];
+// which tendencies matter on each end — the defense editor shouldn't offer
+// shot-hunting biases, and the offense editor shouldn't offer help/gamble.
+const OFF_TENDS: (keyof Tendencies)[] = ["shoot", "three", "drive", "pass", "kickout", "crash"];
+const DEF_TENDS: (keyof Tendencies)[] = ["help", "gamble", "crash"];
 
 /** A slot picker with a "None" option; value/onChange speak slot-or-null. */
 function SlotSelect({
@@ -60,12 +64,15 @@ function SlotSelect({
   names,
   placeholder = "None",
   allowNone = true,
+  omitSlots = [],
 }: {
   value: number | null;
   onChange: (slot: number | null) => void;
   names: string[];
   placeholder?: string;
   allowNone?: boolean;
+  /** slots to hide (e.g. players already claimed elsewhere); the current value is always kept */
+  omitSlots?: number[];
 }) {
   return (
     <Select
@@ -77,11 +84,14 @@ function SlotSelect({
       </SelectTrigger>
       <SelectContent>
         {allowNone && <SelectItem value={NONE}>{placeholder}</SelectItem>}
-        {names.map((n, i) => (
-          <SelectItem key={i} value={String(i)}>
-            {n}
-          </SelectItem>
-        ))}
+        {names
+          .map((n, i) => ({ n, i }))
+          .filter(({ i }) => i === value || !omitSlots.includes(i))
+          .map(({ n, i }) => (
+            <SelectItem key={i} value={String(i)}>
+              {n}
+            </SelectItem>
+          ))}
       </SelectContent>
     </Select>
   );
@@ -99,7 +109,15 @@ interface PlanEditorProps {
 
 export function PlanEditor({ names, context, initialPlan, onApply, className }: PlanEditorProps) {
   const [draft, setDraft] = useState<TeamPlan>(initialPlan ?? BLANK);
-  const isLab = context !== "game";
+  // context gates which sections show: a defense plan has no initiator /
+  // scoring options / actions / inbound / tempo, only scheme + emphasis.
+  const showOffense = context !== "lab-defense";
+  const showInbound = context === "lab-offense";
+  const showDefScheme = context !== "lab-offense";
+  const showPace = context !== "lab-defense";
+  const tendKeys =
+    context === "lab-offense" ? OFF_TENDS : context === "lab-defense" ? DEF_TENDS : ALL_TENDS;
+  const maxDirectives = Math.min(5, names.length);
 
   const patch = (p: Partial<TeamPlan>) => setDraft((d) => ({ ...d, ...p }));
   const preview = useMemo(() => sanitizePlan(draft), [draft]);
@@ -149,11 +167,13 @@ export function PlanEditor({ names, context, initialPlan, onApply, className }: 
       }),
     }));
   const addDirective = () =>
-    setDraft((d) =>
-      d.directives.length >= 5
-        ? d
-        : { ...d, directives: [...d.directives, { slot: 0, note: null, tendencyBias: null }] }
-    );
+    setDraft((d) => {
+      if (d.directives.length >= 5) return d;
+      const used = new Set(d.directives.map((x) => x.slot));
+      const slot = names.findIndex((_, i) => !used.has(i)); // first player not yet emphasized
+      if (slot < 0) return d;
+      return { ...d, directives: [...d.directives, { slot, note: null, tendencyBias: null }] };
+    });
   const removeDirective = (i: number) =>
     setDraft((d) => ({ ...d, directives: d.directives.filter((_, j) => j !== i) }));
 
@@ -170,6 +190,8 @@ export function PlanEditor({ names, context, initialPlan, onApply, className }: 
           />
         </Field>
 
+        {showOffense && (
+          <>
         {/* Initiator */}
         <Field label="Initiator (brings it up)">
           <SlotSelect
@@ -273,12 +295,20 @@ export function PlanEditor({ names, context, initialPlan, onApply, className }: 
             ))}
           </div>
         </Field>
+          </>
+        )}
 
         {/* Directives */}
         <Field
           label="Player emphasis"
           action={
-            <Button size="sm" variant="ghost" className="h-7" onClick={addDirective} disabled={draft.directives.length >= 5}>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7"
+              onClick={addDirective}
+              disabled={draft.directives.length >= maxDirectives}
+            >
               <Plus className="mr-1 size-3.5" /> Add
             </Button>
           }
@@ -291,7 +321,13 @@ export function PlanEditor({ names, context, initialPlan, onApply, className }: 
               <div key={i} className="flex flex-col gap-2 rounded-md border p-2">
                 <div className="flex items-center gap-2">
                   <div className="flex-1">
-                    <SlotSelect value={d.slot} onChange={(s) => setDirective(i, { slot: s ?? 0 })} names={names} allowNone={false} />
+                    <SlotSelect
+                      value={d.slot}
+                      onChange={(s) => setDirective(i, { slot: s ?? 0 })}
+                      names={names}
+                      allowNone={false}
+                      omitSlots={draft.directives.filter((_, j) => j !== i).map((x) => x.slot)}
+                    />
                   </div>
                   <Input
                     value={d.note ?? ""}
@@ -305,7 +341,7 @@ export function PlanEditor({ names, context, initialPlan, onApply, className }: 
                   </Button>
                 </div>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-                  {TEND_KEYS.map((k) => {
+                  {tendKeys.map((k) => {
                     const v = d.tendencyBias?.[k] ?? 0;
                     return (
                       <div key={k} className="flex items-center gap-2">
@@ -331,43 +367,49 @@ export function PlanEditor({ names, context, initialPlan, onApply, className }: 
         </Field>
 
         {/* Defense + pace */}
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Defense">
-            <Select
-              value={draft.defScheme ?? NONE}
-              onValueChange={(v) => patch({ defScheme: v === NONE ? null : (v as TeamPlan["defScheme"]) })}
-            >
-              <SelectTrigger className="h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>Default (man)</SelectItem>
-                <SelectItem value="man">Man-to-man</SelectItem>
-                <SelectItem value="switch">Switch everything</SelectItem>
-                <SelectItem value="zone">2-3 zone</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="Pace">
-            <Select
-              value={draft.pace ?? NONE}
-              onValueChange={(v) => patch({ pace: v === NONE ? null : (v as TeamPlan["pace"]) })}
-            >
-              <SelectTrigger className="h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>Default</SelectItem>
-                <SelectItem value="fast">Fast</SelectItem>
-                <SelectItem value="normal">Normal</SelectItem>
-                <SelectItem value="slow">Slow</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-        </div>
+        {(showDefScheme || showPace) && (
+          <div className="grid grid-cols-2 gap-3">
+            {showDefScheme && (
+              <Field label="Defense">
+                <Select
+                  value={draft.defScheme ?? NONE}
+                  onValueChange={(v) => patch({ defScheme: v === NONE ? null : (v as TeamPlan["defScheme"]) })}
+                >
+                  <SelectTrigger className="h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>Default (man)</SelectItem>
+                    <SelectItem value="man">Man-to-man</SelectItem>
+                    <SelectItem value="switch">Switch everything</SelectItem>
+                    <SelectItem value="zone">2-3 zone</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
+            {showPace && (
+              <Field label="Pace">
+                <Select
+                  value={draft.pace ?? NONE}
+                  onValueChange={(v) => patch({ pace: v === NONE ? null : (v as TeamPlan["pace"]) })}
+                >
+                  <SelectTrigger className="h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>Default</SelectItem>
+                    <SelectItem value="fast">Fast</SelectItem>
+                    <SelectItem value="normal">Normal</SelectItem>
+                    <SelectItem value="slow">Slow</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
+          </div>
+        )}
 
-        {/* Inbound (lab only) */}
-        {isLab && (
+        {/* Inbound (lab offense only) */}
+        {showInbound && (
           <div className="grid grid-cols-2 gap-3">
             <Field label="Inbound from">
               <Select
