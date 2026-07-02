@@ -32,7 +32,14 @@ interface KVNamespaceLike {
   get(key: string): Promise<string | null>;
   put(key: string, value: string): Promise<void>;
 }
-type Bindings = { PLAYS: KVNamespaceLike };
+interface R2BucketLike {
+  put(
+    key: string,
+    value: string,
+    options?: { httpMetadata?: { contentType?: string } }
+  ): Promise<unknown>;
+}
+type Bindings = { PLAYS: KVNamespaceLike; SIMULATION_ARTIFACTS: R2BucketLike };
 
 /* ---------- content-addressed play ids ----------
    A play's id is a hash of its canonical JSON, so re-saving an identical play
@@ -186,9 +193,15 @@ const routes = base
     const host = process.env.TINYBIRD_HOST;
     const token = process.env.TINYBIRD_TOKEN;
     if (host && token) {
-      const ingest = ingestSimulation({ host, token }, req, replay).catch(
-        (err) => console.error("Tinybird ingest failed:", err)
-      );
+      const ingest = ingestSimulation({ host, token }, req, replay, {
+        putMovements: async (artifact) => {
+          const key = `simulations/${artifact.sim_id}/movements.json`;
+          await c.env.SIMULATION_ARTIFACTS.put(key, JSON.stringify(artifact), {
+            httpMetadata: { contentType: "application/json" },
+          });
+          return key;
+        },
+      }).catch((err) => console.error("Tinybird ingest failed:", err));
       try {
         c.executionCtx.waitUntil(ingest);
       } catch {

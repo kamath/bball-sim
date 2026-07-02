@@ -18,7 +18,8 @@ SQL >
         frame_count,
         event_count,
         final_score_a,
-        final_score_b
+        final_score_b,
+        movement_object_key
     FROM simulation_runs
     ORDER BY timestamp DESC
     LIMIT {{Int32(limit, 50)}}

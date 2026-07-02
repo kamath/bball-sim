@@ -1,7 +1,8 @@
 DESCRIPTION >
     One row per simulated possession. Captures the exact configuration the
     simulation was run with — rosters, tactics/plans, and the staged setup —
-    plus a summary of the outcome, so any run can be described and replayed.
+    plus a summary of the outcome and the R2 movement object key, so any run can
+    be described and replayed.
     The full config, plan, def_plan and setup are stored verbatim as JSON
     strings alongside flattened columns used for filtering and display.
 
@@ -19,6 +20,7 @@ SCHEMA >
     `event_count` UInt32 `json:$.event_count`,
     `final_score_a` UInt16 `json:$.final_score_a`,
     `final_score_b` UInt16 `json:$.final_score_b`,
+    `movement_object_key` String `json:$.movement_object_key`,
     `config` String `json:$.config`,
     `plan` String `json:$.plan`,
     `def_plan` String `json:$.def_plan`,

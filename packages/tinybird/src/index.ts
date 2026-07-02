@@ -1,4 +1,3 @@
-/* Public surface of @repo/tinybird — the client that ships a completed
-   simulation (config + movements + play-by-play) to the Tinybird Data
-   Sources defined under datasources/. */
+/* Public surface of @repo/tinybird — the client that ships queryable simulation
+   data to Tinybird and delegates high-volume movement artifact storage. */
 export * from "./ingest";

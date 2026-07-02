@@ -3,16 +3,16 @@
 
    The engine produces a Replay (frames + play-by-play) from a
    SimulateRequest (config + staged setup). This module reshapes that
-   pair into rows for the three landing Data Sources and streams them to
-   the Tinybird Events API (HTTP append, one NDJSON row per line):
+   pair into rows for Tinybird and an external movement artifact store:
 
      simulation_runs        1 row  — the config the run used + a summary
-     simulation_movements   N rows — every entity's position per frame
      simulation_events      M rows — the play-by-play, oldest first
+     movements.json         N rows — every entity's position per frame
 
    It is dependency-free (uses fetch) so it runs unchanged on a Cloudflare
-   Worker, in Node, or in the browser. Ingestion is best-effort: callers
-   typically fire it without blocking the response (e.g. waitUntil).
+   Worker, in Node, or in the browser. The caller provides movement artifact
+   storage (R2 in production). Ingestion is best-effort: callers typically
+   fire it without blocking the response (e.g. waitUntil).
    ============================================================ */
 import type { Replay, SimEvent, SimulateRequest } from "@repo/shared";
 
@@ -25,17 +25,15 @@ export interface TinybirdConfig {
 }
 
 const DS_RUNS = "simulation_runs";
-const DS_MOVEMENTS = "simulation_movements";
 const DS_EVENTS = "simulation_events";
-
-/** Events API caps request bodies; movements are chunked to stay well under it. */
-const MOVEMENT_BATCH = 2000;
 
 export interface IngestOptions {
   /** Unique id for this run. Defaults to a random UUID. */
   simId?: string;
   /** Event time for every row. Defaults to now, formatted for DateTime64(3). */
   timestamp?: Date;
+  /** Store the movement artifact and return its object key. */
+  putMovements?: (artifact: MovementArtifact) => Promise<string>;
 }
 
 export interface IngestResult {
@@ -43,6 +41,29 @@ export interface IngestResult {
   runs: number;
   movements: number;
   events: number;
+  movementObjectKey: string;
+}
+
+export interface MovementRow {
+  sim_id: string;
+  timestamp: string;
+  frame: number;
+  sim_time: number;
+  entity: "player" | "ball";
+  team: number;
+  slot: number;
+  player_number: number;
+  player_name: string;
+  x: number;
+  y: number;
+  air: number;
+  has_ball: number;
+}
+
+export interface MovementArtifact {
+  sim_id: string;
+  timestamp: string;
+  movements: MovementRow[];
 }
 
 /** Format a Date as ClickHouse DateTime64(3): "YYYY-MM-DD HH:MM:SS.mmm" (UTC). */
@@ -67,7 +88,8 @@ function runRow(
   input: SimulateRequest,
   replay: Replay,
   simId: string,
-  ts: string
+  ts: string,
+  movementObjectKey: string
 ): Record<string, unknown> {
   const last = replay.frames.at(-1);
   const [scoreA, scoreB] = last?.scores ?? [0, 0];
@@ -86,6 +108,7 @@ function runRow(
     event_count: replay.events.length,
     final_score_a: scoreA,
     final_score_b: scoreB,
+    movement_object_key: movementObjectKey,
     // Verbatim JSON so the exact run can be described and reproduced.
     config: JSON.stringify(config),
     plan: JSON.stringify(input.plan),
@@ -99,8 +122,8 @@ function movementRows(
   replay: Replay,
   simId: string,
   ts: string
-): Record<string, unknown>[] {
-  const rows: Record<string, unknown>[] = [];
+): MovementRow[] {
+  const rows: MovementRow[] = [];
   // meta.teams[].players lines up with frame.players: team0 slots 0..n then team1.
   const roster = replay.meta.teams.flatMap((t, team) =>
     t.players.map((p, slot) => ({ team, slot, number: p.number, name: p.name }))
@@ -202,14 +225,13 @@ export async function ingestSimulation(
   const simId = opts.simId ?? randomId();
   const ts = tbTimestamp(opts.timestamp ?? new Date());
 
-  const runs = [runRow(input, replay, simId, ts)];
   const movements = movementRows(replay, simId, ts);
+  const movementObjectKey =
+    (await opts.putMovements?.({ sim_id: simId, timestamp: ts, movements })) ?? "";
+  const runs = [runRow(input, replay, simId, ts, movementObjectKey)];
   const events = eventRows(replay.events, simId, ts);
 
   await append(cfg, DS_RUNS, runs);
-  for (let i = 0; i < movements.length; i += MOVEMENT_BATCH) {
-    await append(cfg, DS_MOVEMENTS, movements.slice(i, i + MOVEMENT_BATCH));
-  }
   await append(cfg, DS_EVENTS, events);
 
   return {
@@ -217,5 +239,6 @@ export async function ingestSimulation(
     runs: runs.length,
     movements: movements.length,
     events: events.length,
+    movementObjectKey,
   };
 }

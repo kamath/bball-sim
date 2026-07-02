@@ -21,6 +21,7 @@ SQL >
         event_count,
         final_score_a,
         final_score_b,
+        movement_object_key,
         config,
         plan,
         def_plan,
