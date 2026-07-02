@@ -141,8 +141,11 @@ export function PossessionLab({
         if (edit.kind === "add") {
           if (actions.length >= 3) return p;
           actions = [...actions, edit.action];
-        } else {
+        } else if (edit.kind === "remove") {
           actions = actions.filter((_, i) => i !== edit.index);
+        } else {
+          if (!actions.length) return p; // clearing nothing: skip the remount
+          actions = [];
         }
         return { ...p, plan: { ...base, actions } };
       });

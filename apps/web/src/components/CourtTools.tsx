@@ -17,7 +17,8 @@ interface CourtToolsProps {
   labPhase: LabPhase;
   labTool: LabTool;
   onToolChange: (t: LabTool) => void;
-  onClearPaths: () => void;
+  /** erase the whole authored diagram: routes and actions */
+  onClear: () => void;
 }
 
 const TOOLS: { tool: LabTool; label: string; icon: typeof PenLine; title: string }[] = [
@@ -28,7 +29,7 @@ const TOOLS: { tool: LabTool; label: string; icon: typeof PenLine; title: string
   { tool: "iso", label: "Iso", icon: CircleDashed, title: "Tap a player to clear out and let him work" },
 ];
 
-export function CourtTools({ labPhase, labTool, onToolChange, onClearPaths }: CourtToolsProps) {
+export function CourtTools({ labPhase, labTool, onToolChange, onClear }: CourtToolsProps) {
   const staged = labPhase === "staged";
   return (
     <div className="flex items-center gap-1 rounded-md border p-1">
@@ -47,11 +48,11 @@ export function CourtTools({ labPhase, labTool, onToolChange, onClearPaths }: Co
       <Button
         size="sm"
         variant="ghost"
-        onClick={onClearPaths}
+        onClick={onClear}
         disabled={!staged}
-        title="Erase all drawn routes"
+        title="Erase the whole diagram — drawn routes and actions"
       >
-        <Eraser className="mr-1.5 size-3.5" /> Clear routes
+        <Eraser className="mr-1.5 size-3.5" /> Clear
       </Button>
     </div>
   );

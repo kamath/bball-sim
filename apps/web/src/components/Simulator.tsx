@@ -162,7 +162,7 @@ export function Simulator({
       labPhase={game.labPhase}
       labTool={game.labTool}
       onToolChange={game.setLabTool}
-      onClearPaths={game.clearLabPaths}
+      onClear={game.clearLabAuthoring}
     />
   );
 

@@ -29,7 +29,8 @@ export type LabTool = "move" | "path" | "screen" | "post" | "iso";
 /** A plan edit authored by a court gesture, applied to the sidebar's plan. */
 export type CourtPlanEdit =
   | { kind: "add"; action: PlanAction }
-  | { kind: "remove"; index: number };
+  | { kind: "remove"; index: number }
+  | { kind: "clear" };
 
 /** The distilled result of one simulated possession — the play-by-play outcome
     line, the points the offense scored, and the run's simId (the handle used to
@@ -936,8 +937,10 @@ export function useGame(initialConfig: GameConfig) {
   }, []);
 
 
-  /** Erase all authored motion paths on the staged formation. */
-  const clearLabPaths = useCallback(() => {
+  /** Erase everything authored on the staged court: drawn routes AND the
+      plan actions the gestures compiled (routes and arrows are one diagram,
+      so Clear wipes the whole diagram). Scorers/emphasis/pace are untouched. */
+  const clearLabAuthoring = useCallback(() => {
     const lab = labGameRef.current;
     if (!lab) return;
     for (const t of lab.teams) {
@@ -946,6 +949,7 @@ export function useGame(initialConfig: GameConfig) {
         p.pathIdx = 0;
       }
     }
+    courtEditRef.current?.({ kind: "clear" });
   }, []);
 
   const setLabTool = useCallback((t: LabTool) => {
@@ -1021,7 +1025,7 @@ export function useGame(initialConfig: GameConfig) {
     runLab,
     capturePlay,
     playRun,
-    clearLabPaths,
+    clearLabAuthoring,
     setLabTool,
     getConfig: () => configRef.current,
   };
