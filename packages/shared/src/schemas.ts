@@ -61,6 +61,7 @@ export const TeamConfigSchema = z.object({
   abbr: z.string().optional(),
   color: z.string(),
   players: z.array(PlayerConfigSchema),
+  roster: z.array(PlayerConfigSchema).optional(),
 });
 
 export const GameConfigSchema = z.object({
@@ -77,6 +78,13 @@ export const TeamOptionSchema = z.object({
   conference: z.string(),
 });
 export type TeamOption = z.infer<typeof TeamOptionSchema>;
+
+/** A rated player in the leaguewide pool — a PlayerConfig plus the real team
+    he plays for, so the "All NBA" picker can show and search by team. */
+export const RosterPlayerSchema = PlayerConfigSchema.extend({
+  teamAbbr: z.string().optional(),
+});
+export type RosterPlayer = z.infer<typeof RosterPlayerSchema>;
 
 export const BuildMatchupInputSchema = z.object({
   teamAId: z.number().int(),

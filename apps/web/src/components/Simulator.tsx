@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useGame } from "@/hooks/useGame";
 import { useBuildMatchup, useTeams } from "@/lib/queries";
 import { savePlay } from "@/lib/api";
-import type { GameConfig, SimulateRequest } from "@repo/shared";
+import type { GameConfig, PlayerConfig, SimulateRequest } from "@repo/shared";
 import { Court } from "./Court";
 import { Feed } from "./Feed";
 import { PossessionLab } from "./PossessionLab";
@@ -21,6 +21,12 @@ interface SimulatorProps {
   initialPlay?: SimulateRequest;
 }
 
+/** The two teams' full selectable rosters, in [home, away] order. */
+const rostersOf = (cfg: GameConfig): [PlayerConfig[], PlayerConfig[]] => [
+  cfg.teamA.roster ?? [],
+  cfg.teamB.roster ?? [],
+];
+
 export function Simulator({ initialConfig, initialPlay }: SimulatorProps) {
   const game = useGame(initialConfig);
   const { data: teams = [] } = useTeams();
@@ -28,6 +34,10 @@ export function Simulator({ initialConfig, initialPlay }: SimulatorProps) {
   const names = snapshot.teamMeta;
   // active sub-tab within the lab panel (designer / teams + roster edit)
   const [labTab, setLabTab] = useState("lab");
+  // each team's full roster, so the editor can swap a starter for a teammate
+  const [rosters, setRosters] = useState<[PlayerConfig[], PlayerConfig[]]>(() =>
+    rostersOf(initialConfig)
+  );
   // share-link state: idle → the saved /play/{id} url once copied
   const [shareStatus, setShareStatus] = useState<"idle" | "saving" | "copied">("idle");
 
@@ -44,7 +54,10 @@ export function Simulator({ initialConfig, initialPlay }: SimulatorProps) {
     autoLoaded.current = true;
     autoMatchup
       .mutateAsync({ teamAId: spurs.id, teamBId: knicks.id })
-      .then((config) => game.newGame(config))
+      .then((config) => {
+        game.newGame(config);
+        setRosters(rostersOf(config));
+      })
       .catch(() => {
         autoLoaded.current = false; // let a later teams refresh retry
       });
@@ -153,8 +166,19 @@ export function Simulator({ initialConfig, initialPlay }: SimulatorProps) {
           <TabsContent value="teams" className="flex-1 min-h-0">
             <ScrollArea className="h-full pr-3">
               <div className="flex flex-col gap-4">
-                <TeamPicker teams={teams} onLoad={(config) => game.newGame(config)} />
-                <RosterEditor teams={game.boxTeams} onEdit={game.editPlayer} />
+                <TeamPicker
+                  teams={teams}
+                  onLoad={(config) => {
+                    game.newGame(config);
+                    setRosters(rostersOf(config));
+                  }}
+                />
+                <RosterEditor
+                  teams={game.boxTeams}
+                  rosters={rosters}
+                  onEdit={game.editPlayer}
+                  onSwap={game.swapPlayer}
+                />
               </div>
             </ScrollArea>
           </TabsContent>

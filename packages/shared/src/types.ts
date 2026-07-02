@@ -90,7 +90,11 @@ export interface TeamConfig {
   name: string;
   abbr?: string;
   color: string;
+  /** the five on the court — what the engine actually plays with */
   players: PlayerConfig[];
+  /** full selectable roster (includes the five in `players`); lets the UI
+      swap a starter for any teammate. Omitted for hand-authored configs. */
+  roster?: PlayerConfig[];
 }
 
 export interface GameConfig {

@@ -4,7 +4,7 @@
    Server-only: pulls behind the API key, then hands the client a
    plain GameConfig. (Formerly app/actions.ts.)
    ============================================================ */
-import type { GameConfig, PlayerConfig, TeamConfig, TeamOption } from "@repo/shared";
+import type { GameConfig, PlayerConfig, RosterPlayer, TeamConfig, TeamOption } from "@repo/shared";
 import {
   DEFAULT_SEASON,
   getActiveRoster,
@@ -28,6 +28,21 @@ const TEAM_COLORS: Record<string, string> = {
 };
 
 const colorFor = (abbr: string) => TEAM_COLORS[abbr] || "#777777";
+
+/** Every rated player in the league (this season), so the picker can sub in
+    anyone — not just the two teams in the matchup. Ordered by minutes so the
+    most relevant names surface first before the user types a search. */
+export async function listAllPlayers(season: number = DEFAULT_SEASON): Promise<RosterPlayer[]> {
+  const league = await getLeagueData(season);
+  const scout = makeScout(league.dist);
+  const rows = [...league.byId.values()]
+    .filter((s) => s.gp >= 5 && s.min >= 5)
+    .sort((a, b) => b.min - a.min);
+  return rows.map((s, i) => ({
+    ...ratePlayer(s, scout, 30 + (i % 70)),
+    teamAbbr: s.player.team?.abbreviation,
+  }));
+}
 
 export async function listTeams(): Promise<TeamOption[]> {
   const teams = await getTeams();
@@ -53,16 +68,15 @@ async function buildTeam(teamId: number, season: number): Promise<TeamConfig> {
   }
   withStats.sort((a, b) => b.min - a.min);
 
-  // Starting five = the five highest-minute players who have stats; backfill
-  // from statless identities only if a team is short (rare).
-  const players: PlayerConfig[] = [];
+  // Rate the whole active roster so any teammate can be subbed onto the court:
+  // statted players first (ordered by minutes), then the statless ones.
+  const pool: PlayerConfig[] = [];
   let n = 0;
-  for (const { id } of withStats.slice(0, 5)) {
-    players.push(ratePlayer(league.byId.get(id.id)!, scout, 30 + n++));
+  for (const { id } of withStats) {
+    pool.push(ratePlayer(league.byId.get(id.id)!, scout, 30 + n++));
   }
   for (const id of withoutStats) {
-    if (players.length >= 5) break;
-    players.push(fallbackPlayer(id, 30 + n++));
+    pool.push(fallbackPlayer(id, 30 + n++));
   }
 
   const team = roster[0]?.team;
@@ -71,7 +85,10 @@ async function buildTeam(teamId: number, season: number): Promise<TeamConfig> {
     name: team?.full_name || "Team",
     abbr,
     color: colorFor(abbr),
-    players,
+    // default starters = the five highest-minute players; the rest sit on the
+    // bench and can be swapped in from the full roster below.
+    players: pool.slice(0, 5),
+    roster: pool,
   };
 }
 

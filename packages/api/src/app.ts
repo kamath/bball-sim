@@ -13,12 +13,13 @@ import {
   BuildMatchupInputSchema,
   GameConfigSchema,
   ReplaySchema,
+  RosterPlayerSchema,
   SimulateRequestSchema,
   TeamOptionSchema,
   simulatePossession,
 } from "@repo/shared";
 import { ingestSimulation } from "@repo/tinybird";
-import { buildMatchup, listTeams } from "./lib/teams";
+import { buildMatchup, listAllPlayers, listTeams } from "./lib/teams";
 
 const ErrorSchema = z.object({ error: z.string() });
 const jsonError = { content: { "application/json": { schema: ErrorSchema } } };
@@ -70,6 +71,20 @@ const teamsRoute = createRoute({
     200: {
       description: "Every team the picker can load",
       content: { "application/json": { schema: z.array(TeamOptionSchema) } },
+    },
+    500: { description: "Upstream/data error", ...jsonError },
+  },
+});
+
+const playersRoute = createRoute({
+  method: "get",
+  path: "/players",
+  summary: "List every rated NBA player available to sub into a lineup",
+  tags: ["teams"],
+  responses: {
+    200: {
+      description: "The leaguewide rated player pool",
+      content: { "application/json": { schema: z.array(RosterPlayerSchema) } },
     },
     500: { description: "Upstream/data error", ...jsonError },
   },
@@ -177,6 +192,10 @@ const routes = base
   .openapi(teamsRoute, async (c) => {
     const teams = await listTeams();
     return c.json(z.array(TeamOptionSchema).parse(teams), 200);
+  })
+  .openapi(playersRoute, async (c) => {
+    const players = await listAllPlayers();
+    return c.json(z.array(RosterPlayerSchema).parse(players), 200);
   })
   .openapi(matchupRoute, async (c) => {
     const { teamAId, teamBId, season } = c.req.valid("json");

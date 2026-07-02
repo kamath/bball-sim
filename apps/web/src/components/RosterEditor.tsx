@@ -1,14 +1,16 @@
 "use client";
 import { useMemo, useState } from "react";
+import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { cn } from "@/lib/utils";
+import { PlayerCombobox } from "@/components/PlayerCombobox";
 import type { BoxTeam } from "@/hooks/useGame";
-import type { Player } from "@repo/shared";
+import type { Player, PlayerConfig } from "@repo/shared";
 
 const fmtHeight = (v: number) => `${Math.floor(v / 12)}'${v % 12}"`;
+const lastName = (n: string) => n.split(" ").slice(-1)[0];
 
 type Row = [key: keyof Player, label: string, min: number, max: number, fmt?: (v: number) => string];
 
@@ -52,10 +54,14 @@ const TENDENCIES: [keyof Player["tend"], string][] = [
 
 interface RosterEditorProps {
   teams: BoxTeam[];
+  /** each team's full selectable roster, in the same order as `teams`; enables
+      swapping a starter for a teammate. Empty when a config carries no roster. */
+  rosters?: PlayerConfig[][];
   onEdit: (teamIdx: number, slot: number, mutate: (p: Player) => void) => void;
+  onSwap?: (teamIdx: number, slot: number, replacement: PlayerConfig) => void;
 }
 
-export function RosterEditor({ teams, onEdit }: RosterEditorProps) {
+export function RosterEditor({ teams, rosters, onEdit, onSwap }: RosterEditorProps) {
   const [sel, setSel] = useState<{ ti: number; slot: number }>({ ti: 0, slot: 0 });
   const [, force] = useState(0);
   const rerender = () => force((n) => n + 1);
@@ -83,33 +89,75 @@ export function RosterEditor({ teams, onEdit }: RosterEditorProps) {
     rerender();
   };
 
+  // Everyone currently on the court, both teams — no player can start twice,
+  // whether that's a duplicate on one side or a face-off against himself.
+  const onCourtIds = new Set(teams.flatMap((t) => t.players.map((bp) => bp.player.nbaId)));
+
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">Changes apply to the game in progress immediately.</p>
 
-      {teams.map((t, ti) => (
-        <div key={ti} className="flex flex-col gap-1.5">
-          <h4 className="flex items-center gap-2 text-sm font-semibold">
-            <span className="size-2.5 rounded-full" style={{ background: t.color }} />
-            {t.name}
-          </h4>
-          <div className="flex flex-wrap gap-1.5">
-            {t.players.map((bp, slot) => {
-              const on = sel.ti === ti && sel.slot === slot;
-              return (
-                <Button
-                  key={bp.id}
-                  size="sm"
-                  variant={on ? "secondary" : "outline"}
-                  onClick={() => setSel({ ti, slot })}
-                >
-                  #{bp.number} {bp.name.split(" ").slice(-1)[0]}
-                </Button>
-              );
-            })}
+      {teams.map((t, ti) => {
+        const pool = rosters?.[ti] ?? [];
+        return (
+          <div key={ti} className="flex flex-col gap-1.5">
+            <h4 className="flex items-center gap-2 text-sm font-semibold">
+              <span className="size-2.5 rounded-full" style={{ background: t.color }} />
+              {t.name}
+            </h4>
+
+            {pool.length === 0 ? (
+              // Hand-authored config (no roster to swap from): pick a player to edit.
+              <div className="flex flex-wrap gap-1.5">
+                {t.players.map((bp, slot) => {
+                  const on = sel.ti === ti && sel.slot === slot;
+                  return (
+                    <Button
+                      key={bp.id}
+                      size="sm"
+                      variant={on ? "secondary" : "outline"}
+                      onClick={() => setSel({ ti, slot })}
+                    >
+                      #{bp.number} {lastName(bp.name)}
+                    </Button>
+                  );
+                })}
+              </div>
+            ) : (
+              // One row per on-court slot: swap the starter, or pencil to edit him.
+              <div className="flex flex-col gap-1.5">
+                {t.players.map((bp, slot) => {
+                  const on = sel.ti === ti && sel.slot === slot;
+                  return (
+                    <div key={bp.id} className="flex items-center gap-1.5">
+                      <PlayerCombobox
+                        current={{
+                          number: bp.number,
+                          name: bp.name,
+                          pos: bp.player.position,
+                          nbaId: bp.player.nbaId,
+                        }}
+                        teamPool={pool}
+                        excludeIds={onCourtIds}
+                        onSelect={(repl) => onSwap?.(ti, slot, repl)}
+                      />
+                      <Button
+                        size="icon"
+                        variant={on ? "secondary" : "outline"}
+                        className="size-8 shrink-0"
+                        onClick={() => setSel({ ti, slot })}
+                        title="Edit ratings"
+                      >
+                        <Pencil className="size-3.5" />
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       <div className="flex gap-2">
         <Input

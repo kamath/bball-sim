@@ -38,6 +38,12 @@ export async function fetchTeams() {
   return res.json(); // inferred: TeamOption[]
 }
 
+export async function fetchAllPlayers() {
+  const res = await api.api.players.$get();
+  if (!res.ok) throw await toError(res);
+  return res.json(); // inferred: RosterPlayer[]
+}
+
 export async function fetchMatchup(input: BuildMatchupInput) {
   const res = await api.api.matchup.$post({ json: input });
   if (!res.ok) throw await toError(res);

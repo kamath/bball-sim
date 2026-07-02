@@ -14,6 +14,7 @@ import type {
   GameConfig,
   LabSetup,
   Player,
+  PlayerConfig,
   Replay,
   ReplayFrame,
   ReplayMeta,
@@ -616,6 +617,27 @@ export function useGame(initialConfig: GameConfig) {
     setLabToolState(t);
   }, []);
 
+  /** Swap the player in one on-court slot for another, then rebuild the game on
+      the new lineup. No-ops if that player is already on the court for either
+      team (bar the slot being replaced), so nobody starts twice or faces
+      himself. */
+  const swapPlayer = useCallback(
+    (teamIdx: number, slot: number, replacement: PlayerConfig) => {
+      const cfg = configRef.current;
+      const team = teamIdx === 0 ? cfg.teamA : cfg.teamB;
+      if (!team) return;
+      const clashes = (t: typeof cfg.teamA, isTarget: boolean) =>
+        t.players.some(
+          (p, i) => p.nbaId != null && p.nbaId === replacement.nbaId && !(isTarget && i === slot)
+        );
+      if (clashes(cfg.teamA, teamIdx === 0) || clashes(cfg.teamB, teamIdx === 1)) return;
+      const players = team.players.map((p, i) => (i === slot ? structuredClone(replacement) : p));
+      const nextTeam = { ...team, players };
+      newGame(teamIdx === 0 ? { ...cfg, teamA: nextTeam } : { ...cfg, teamB: nextTeam });
+    },
+    [newGame]
+  );
+
   /** Mutate a live player's field in place (engine reads the same object). */
   const editPlayer = useCallback((teamIdx: number, slot: number, mutate: (p: Player) => void) => {
     const game = gameRef.current;
@@ -649,6 +671,7 @@ export function useGame(initialConfig: GameConfig) {
     togglePlay,
     setSpeed,
     editPlayer,
+    swapPlayer,
     stageLab,
     runLab,
     reRunLab,
