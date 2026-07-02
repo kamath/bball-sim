@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { Eraser, MousePointer2, PenLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PlanEditor } from "@/components/PlanEditor";
 import type { SimulateRequest, TeamPlan } from "@repo/shared";
 import type { BoxTeam, LabPhase, LabTool, PossessionOpts } from "@/hooks/useGame";
@@ -94,9 +95,15 @@ export function PossessionLab({
         </div>
       </div>
 
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-1.5">
-          <Label>Offense plan ({offTeam.name})</Label>
+      {/* forceMount keeps both editors alive so switching sides never drops an
+          in-progress plan or re-stages the formation. */}
+      <Tabs defaultValue="offense" className="flex flex-col gap-2">
+        <TabsList className="grid grid-cols-2">
+          <TabsTrigger value="offense">Offense</TabsTrigger>
+          <TabsTrigger value="defense">Defense</TabsTrigger>
+        </TabsList>
+        <TabsContent value="offense" forceMount className="data-[state=inactive]:hidden">
+          <p className="mb-2 text-xs text-muted-foreground">{offTeam.name}</p>
           <PlanEditor
             key={`off-${buildSeed}`}
             names={offNames}
@@ -105,9 +112,9 @@ export function PossessionLab({
             disabled={!configurable}
             onApply={(plan) => setPlans((p) => ({ ...p, plan }))}
           />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label>Defense plan ({defTeam.name}) — optional</Label>
+        </TabsContent>
+        <TabsContent value="defense" forceMount className="data-[state=inactive]:hidden">
+          <p className="mb-2 text-xs text-muted-foreground">{defTeam.name} — optional</p>
           <PlanEditor
             key={`def-${buildSeed}`}
             names={defNames}
@@ -116,8 +123,8 @@ export function PossessionLab({
             disabled={!configurable}
             onApply={(defPlan) => setPlans((p) => ({ ...p, defPlan }))}
           />
-        </div>
-      </div>
+        </TabsContent>
+      </Tabs>
 
       {handlerSlot >= 0 && offTeam.players[handlerSlot] && (
         <p className="text-xs text-muted-foreground">

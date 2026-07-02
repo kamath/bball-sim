@@ -104,7 +104,6 @@ export const PlayerDirectiveSchema = z.object({
 });
 
 export const TeamPlanSchema = z.object({
-  summary: z.string(),
   handlerSlot: slot.nullable(),
   scorerSlots: z.array(slot),
   actions: z.array(PlanActionSchema),

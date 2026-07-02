@@ -7,7 +7,7 @@
    edit and run through sanitizePlan() on apply, so half-finished
    rows never reach the engine.
    ============================================================ */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, Trash2, X } from "lucide-react";
 import {
   sanitizePlan,
@@ -21,7 +21,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { PlanSummary } from "@/components/PlanSummary";
 import {
   Select,
   SelectContent,
@@ -31,7 +30,6 @@ import {
 } from "@/components/ui/select";
 
 const BLANK: TeamPlan = {
-  summary: "",
   handlerSlot: null,
   scorerSlots: [],
   actions: [],
@@ -44,7 +42,6 @@ const BLANK: TeamPlan = {
 
 /** True when the draft carries no coaching intent — treated as "no plan". */
 const isBlankPlan = (d: TeamPlan) =>
-  !d.summary &&
   d.handlerSlot === null &&
   d.scorerSlots.length === 0 &&
   d.actions.length === 0 &&
@@ -130,7 +127,6 @@ export function PlanEditor({ names, context, initialPlan, disabled, onApply, cla
   const maxDirectives = Math.min(5, names.length);
 
   const patch = (p: Partial<TeamPlan>) => setDraft((d) => ({ ...d, ...p }));
-  const preview = useMemo(() => sanitizePlan(draft), [draft]);
 
   // The plan auto-adjusts as you edit — no "Apply" step. Debounce so a slider
   // drag or typing doesn't re-stage the formation on every tick. The initial
@@ -207,16 +203,6 @@ export function PlanEditor({ names, context, initialPlan, disabled, onApply, cla
   return (
     <fieldset disabled={disabled} className={`m-0 min-w-0 border-0 p-0 ${className ?? ""}`}>
       <div className="flex flex-col gap-4">
-        {/* Summary */}
-        <Field label="Summary (optional)">
-          <Input
-            value={draft.summary}
-            onChange={(e) => patch({ summary: e.target.value })}
-            placeholder="Custom game plan"
-            className="h-8"
-          />
-        </Field>
-
         {showOffense && (
           <>
         {/* Initiator */}
@@ -462,9 +448,6 @@ export function PlanEditor({ names, context, initialPlan, disabled, onApply, cla
             </Field>
           </div>
         )}
-
-        {/* Live preview */}
-        <PlanSummary title="Preview" plan={preview} names={names} />
 
         {/* The plan applies automatically as you edit; Clear resets it. */}
         <div className="flex justify-end">

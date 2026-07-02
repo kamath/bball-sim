@@ -33,8 +33,6 @@ export interface PlayerDirective {
 }
 
 export interface TeamPlan {
-  /** one-line readable restatement of the plan */
-  summary: string;
   /** who initiates the offense; null = best ball-handler */
   handlerSlot: number | null;
   /** scoring options in priority order (max 3) */
@@ -97,7 +95,6 @@ export function sanitizePlan(raw: TeamPlan): TeamPlan {
       };
     });
   return {
-    summary: raw.summary || "Custom game plan",
     handlerSlot: okSlot(raw.handlerSlot) ? raw.handlerSlot : null,
     scorerSlots,
     actions,
@@ -107,44 +104,4 @@ export function sanitizePlan(raw: TeamPlan): TeamPlan {
     inbound: raw.inbound ?? null,
     inbounderSlot: okSlot(raw.inbounderSlot) ? raw.inbounderSlot : null,
   };
-}
-
-/** Human-readable lines describing a plan, for the UI summary card. */
-export function describePlan(plan: TeamPlan, names: string[]): string[] {
-  const nm = (s: number | null) => (s !== null && names[s] ? names[s] : "?");
-  const lines: string[] = [];
-  if (plan.handlerSlot !== null) lines.push(`${nm(plan.handlerSlot)} initiates`);
-  if (plan.scorerSlots.length)
-    lines.push(`Options: ${plan.scorerSlots.map(nm).join(" → ")}`);
-  for (const a of plan.actions) {
-    if (a.type === "pickAndRoll")
-      lines.push(
-        `Pick & roll: ${nm(a.screenerSlot)} screens for ${nm(a.handlerSlot)}` +
-          (a.finish ? ` and ${a.finish}s` : "")
-      );
-    else if (a.type === "getOpen")
-      lines.push(
-        `Get ${nm(a.targetSlot)} open` +
-          (a.screenerSlot !== null ? ` off ${nm(a.screenerSlot)}'s screens` : "")
-      );
-    else if (a.type === "iso") lines.push(`Iso for ${nm(a.targetSlot)} — clear out`);
-    else if (a.type === "postUp") lines.push(`Post up ${nm(a.targetSlot)} on the block`);
-  }
-  for (const d of plan.directives) {
-    const parts: string[] = [];
-    if (d.note) parts.push(d.note.toLowerCase());
-    if (d.tendencyBias)
-      parts.push(
-        Object.entries(d.tendencyBias)
-          .map(([k, v]) => `${k} ${(v as number) > 0 ? "+" : ""}${v}`)
-          .join(", ")
-      );
-    if (parts.length) lines.push(`${nm(d.slot)}: ${parts.join(" · ")}`);
-  }
-  if (plan.defScheme)
-    lines.push(
-      `Defense: ${plan.defScheme === "man" ? "man-to-man" : plan.defScheme === "switch" ? "switch everything" : "2-3 zone"}`
-    );
-  if (plan.pace && plan.pace !== "normal") lines.push(`Pace: ${plan.pace}`);
-  return lines;
 }
