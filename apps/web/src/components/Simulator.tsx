@@ -1,15 +1,17 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Check, Share2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { useGame } from "@/hooks/useGame";
-import { useTeams } from "@/lib/queries";
-import { savePlay } from "@/lib/api";
+import { useConfigPlays, useTeams } from "@/lib/queries";
+import { fetchLibraryPlay, savePlay } from "@/lib/api";
 import type { GameConfig, PlayerConfig, SimulateRequest } from "@repo/shared";
 import { Court } from "./Court";
 import { Feed } from "./Feed";
+import { PlayLibrary } from "./PlayLibrary";
 import { PossessionLab } from "./PossessionLab";
 import { RosterEditor } from "./RosterEditor";
 import { ShotClock } from "./ShotClock";
@@ -40,6 +42,40 @@ export function Simulator({ initialConfig, initialPlay }: SimulatorProps) {
   );
   // share-link state: idle → the saved /play/{id} url once copied
   const [shareStatus, setShareStatus] = useState<"idle" | "saving" | "copied">("idle");
+  const queryClient = useQueryClient();
+
+  // The matchup's play library: prior possessions recorded on this exact config.
+  // Keyed by game.version so it re-searches when the matchup / roster changes.
+  const { data: plays = [] } = useConfigPlays(game.getConfig(), game.version);
+  // Show the library over the court on load / config change, until dismissed or
+  // a play is picked. Reset the dismissal whenever the matchup changes.
+  const [libraryDismissed, setLibraryDismissed] = useState(false);
+  const [loadingPlay, setLoadingPlay] = useState<string | null>(null);
+  useEffect(() => {
+    setLibraryDismissed(false);
+  }, [game.version]);
+  // A freshly-run possession is auto-recorded; refresh the library so it shows up.
+  useEffect(() => {
+    if (game.labPhase === "ended") {
+      queryClient.invalidateQueries({ queryKey: ["configPlays"] });
+    }
+  }, [game.labPhase, queryClient]);
+
+  const showLibrary = !libraryDismissed && plays.length > 0;
+
+  // Pick a recorded play: load its exact replay and reveal the court to watch it.
+  const onSelectPlay = async (simId: string) => {
+    setLoadingPlay(simId);
+    try {
+      const stored = await fetchLibraryPlay(simId);
+      game.playStored(stored.request, stored.replay);
+      setLibraryDismissed(true);
+    } catch {
+      /* leave the library open so another play can be tried */
+    } finally {
+      setLoadingPlay(null);
+    }
+  };
 
   const onShare = async () => {
     const play = game.capturePlay();
@@ -90,7 +126,7 @@ export function Simulator({ initialConfig, initialPlay }: SimulatorProps) {
       <ShotClock snapshot={snapshot} />
 
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_420px] lg:grid-rows-[minmax(0,1fr)]">
-        <div className="flex flex-col gap-4">
+        <div className="relative flex flex-col gap-4">
           <Court
             canvasRef={game.canvasRef}
             playing={game.playing}
@@ -112,6 +148,14 @@ export function Simulator({ initialConfig, initialPlay }: SimulatorProps) {
             title="Possession play-by-play"
             className="h-[220px]"
           />
+          {showLibrary && (
+            <PlayLibrary
+              plays={plays}
+              loadingId={loadingPlay}
+              onSelect={onSelectPlay}
+              onDismiss={() => setLibraryDismissed(true)}
+            />
+          )}
         </div>
 
         <Tabs value={labTab} onValueChange={setLabTab} className="flex min-h-0 flex-col">

@@ -130,3 +130,31 @@ export function simulatePossession(input: SimulateRequest): Replay {
   }
   return { meta, frames, events };
 }
+
+/* The play-by-play events that resolve a possession, newest wins. A possession
+   ends on exactly one of these; passes/rebounds/info are just chatter. */
+const DECISIVE_EVENTS = new Set(["score", "dunk", "miss", "block", "steal", "turnover"]);
+
+/** Distill a recorded possession into a one-line result for the play library:
+    the outcome text (verbatim from the play-by-play) and the points the offense
+    scored. Used to index a saved play so its outcome can be shown without
+    loading the full replay. */
+export function summarizePossession(
+  offense: number,
+  replay: Replay
+): { result: string; points: number } {
+  const { frames, events } = replay;
+  const points = frames.length
+    ? frames[frames.length - 1].scores[offense] - frames[0].scores[offense]
+    : 0;
+  // walk back to the possession's terminal event; fall back to the last line.
+  let outcome: SimEvent | undefined;
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (DECISIVE_EVENTS.has(events[i].type)) {
+      outcome = events[i];
+      break;
+    }
+  }
+  const result = outcome?.text ?? events[events.length - 1]?.text ?? "No result";
+  return { result, points };
+}

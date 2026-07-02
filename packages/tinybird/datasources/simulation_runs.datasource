@@ -5,11 +5,15 @@ DESCRIPTION >
     be described and replayed.
     The full config, plan, def_plan and setup are stored verbatim as JSON
     strings alongside flattened columns used for filtering and display.
+    `config_hash` is a stable hash of the GameConfig (the "matchup key"), so the
+    play library can list every run of one exact matchup; `result`/`points`
+    summarize the possession's outcome for that list.
 
 SCHEMA >
     `sim_id` String `json:$.sim_id`,
     `timestamp` DateTime64(3) `json:$.timestamp`,
     `offense` UInt8 `json:$.offense`,
+    `config_hash` String `json:$.config_hash`,
     `team_a_name` String `json:$.team_a_name`,
     `team_a_abbr` String `json:$.team_a_abbr`,
     `team_b_name` String `json:$.team_b_name`,
@@ -20,6 +24,8 @@ SCHEMA >
     `event_count` UInt32 `json:$.event_count`,
     `final_score_a` UInt16 `json:$.final_score_a`,
     `final_score_b` UInt16 `json:$.final_score_b`,
+    `result` String `json:$.result`,
+    `points` UInt8 `json:$.points`,
     `movement_object_key` String `json:$.movement_object_key`,
     `config` String `json:$.config`,
     `plan` String `json:$.plan`,

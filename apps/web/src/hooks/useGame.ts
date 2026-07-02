@@ -600,6 +600,23 @@ export function useGame(initialConfig: GameConfig) {
     };
   }, []);
 
+  /** Play back a recorded play from the matchup library: re-stage its authored
+      formation (so it can be tweaked / re-run), then load the exact replay that
+      ran so the court shows the same outcome the library listed. Assumes the
+      play belongs to the current matchup (the library only lists this config). */
+  const playStored = useCallback(
+    (request: SimulateRequest, rep: Replay) => {
+      stageLab({
+        offense: request.offense,
+        plan: request.plan,
+        defPlan: request.defPlan,
+        setup: request.setup,
+      });
+      loadReplay(rep);
+    },
+    [stageLab, loadReplay]
+  );
+
   /** Erase all authored motion paths on the staged formation. */
   const clearLabPaths = useCallback(() => {
     const lab = labGameRef.current;
@@ -677,6 +694,7 @@ export function useGame(initialConfig: GameConfig) {
     reRunLab,
     resetLab,
     capturePlay,
+    playStored,
     clearLabPaths,
     setLabTool,
     getConfig: () => configRef.current,

@@ -14,6 +14,7 @@
    storage (R2 in production). Ingestion is best-effort: callers typically
    fire it without blocking the response (e.g. waitUntil).
    ============================================================ */
+import { hashConfig, summarizePossession } from "@repo/shared";
 import type { Replay, SimEvent, SimulateRequest } from "@repo/shared";
 
 /** Where to send events and how to authenticate. */
@@ -34,6 +35,10 @@ export interface IngestOptions {
   timestamp?: Date;
   /** Store the movement artifact and return its object key. */
   putMovements?: (artifact: MovementArtifact) => Promise<string>;
+  /** Store the full Replay (so a run can be played back exactly) and return its
+      object key. The movement artifact drops per-frame scoreboard/clock, so the
+      play library reads this back instead of reconstructing from movements. */
+  putReplay?: (replay: Replay, simId: string) => Promise<string>;
 }
 
 export interface IngestResult {
@@ -83,13 +88,18 @@ function randomId(): string {
 const defScheme = (r: SimulateRequest): string =>
   r.plan?.defScheme ?? r.defPlan?.defScheme ?? "man";
 
-/** Build the single summary row that records what the run was configured with. */
+/** Build the single summary row that records what the run was configured with.
+    `configHash` (the matchup key) and the outcome summary are precomputed by the
+    caller since hashing is async. */
 function runRow(
   input: SimulateRequest,
   replay: Replay,
   simId: string,
   ts: string,
-  movementObjectKey: string
+  movementObjectKey: string,
+  configHash: string,
+  result: string,
+  points: number
 ): Record<string, unknown> {
   const last = replay.frames.at(-1);
   const [scoreA, scoreB] = last?.scores ?? [0, 0];
@@ -98,6 +108,7 @@ function runRow(
     sim_id: simId,
     timestamp: ts,
     offense: input.offense,
+    config_hash: configHash,
     team_a_name: config.teamA.name,
     team_a_abbr: config.teamA.abbr ?? "",
     team_b_name: config.teamB.name,
@@ -108,6 +119,8 @@ function runRow(
     event_count: replay.events.length,
     final_score_a: scoreA,
     final_score_b: scoreB,
+    result,
+    points,
     movement_object_key: movementObjectKey,
     // Verbatim JSON so the exact run can be described and reproduced.
     config: JSON.stringify(config),
@@ -228,7 +241,13 @@ export async function ingestSimulation(
   const movements = movementRows(replay, simId, ts);
   const movementObjectKey =
     (await opts.putMovements?.({ sim_id: simId, timestamp: ts, movements })) ?? "";
-  const runs = [runRow(input, replay, simId, ts, movementObjectKey)];
+  // Store the full Replay for faithful playback (best-effort; key unused here).
+  await opts.putReplay?.(replay, simId);
+  const configHash = await hashConfig(input.config);
+  const { result, points } = summarizePossession(input.offense, replay);
+  const runs = [
+    runRow(input, replay, simId, ts, movementObjectKey, configHash, result, points),
+  ];
   const events = eventRows(replay.events, simId, ts);
 
   await append(cfg, DS_RUNS, runs);

@@ -227,6 +227,35 @@ export const ReplaySchema = z.object({
   events: z.array(SimEventSchema),
 });
 
+/* ---------- the matchup play library (backed by simulation analytics) ---------- */
+
+/** A recorded possession pulled back from analytics: the authored request (to
+    re-stage it) plus the exact Replay that ran (to play it back faithfully — the
+    sim is random, so the recorded frames are the only reproducible result). */
+export const StoredPlaySchema = z.object({
+  request: SimulateRequestSchema,
+  replay: ReplaySchema,
+});
+export type StoredPlay = z.infer<typeof StoredPlaySchema>;
+
+/** A one-line summary of a recorded play, listed for a matchup so the library
+    can show each outcome without loading the full replay. */
+export const PlaySummarySchema = z.object({
+  /** analytics run id — the handle used to load the full recorded play */
+  simId: z.string(),
+  /** the possession's outcome, verbatim from the play-by-play
+      (e.g. "Wembanyama buries the triple") */
+  result: z.string(),
+  /** points the offense scored on the possession (0 on a miss/turnover) */
+  points: z.number(),
+  /** which side had the ball (0 = teamA, 1 = teamB) */
+  offense: z.number(),
+  offenseTeam: z.string(),
+  /** when the play was run (ClickHouse DateTime64 string, newest first) */
+  timestamp: z.string(),
+});
+export type PlaySummary = z.infer<typeof PlaySummarySchema>;
+
 /* ---------- drift guards: schema inference must match the hand-written
    interfaces the engine relies on. These are compile-time only. ---------- */
 type Assert<T extends true> = T;

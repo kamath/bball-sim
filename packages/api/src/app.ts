@@ -12,13 +12,16 @@ import { cors } from "hono/cors";
 import {
   BuildMatchupInputSchema,
   GameConfigSchema,
+  PlaySummarySchema,
   ReplaySchema,
   RosterPlayerSchema,
   SimulateRequestSchema,
+  StoredPlaySchema,
   TeamOptionSchema,
+  hashConfig,
   simulatePossession,
 } from "@repo/shared";
-import { ingestSimulation } from "@repo/tinybird";
+import { getRunConfig, ingestSimulation, listPlaysForConfig } from "@repo/tinybird";
 import { buildMatchup, listAllPlayers, listTeams } from "./lib/teams";
 
 const ErrorSchema = z.object({ error: z.string() });
@@ -33,12 +36,16 @@ interface KVNamespaceLike {
   get(key: string): Promise<string | null>;
   put(key: string, value: string): Promise<void>;
 }
+interface R2ObjectBodyLike {
+  text(): Promise<string>;
+}
 interface R2BucketLike {
   put(
     key: string,
     value: string,
     options?: { httpMetadata?: { contentType?: string } }
   ): Promise<unknown>;
+  get(key: string): Promise<R2ObjectBodyLike | null>;
 }
 type Bindings = { PLAYS: KVNamespaceLike; SIMULATION_ARTIFACTS: R2BucketLike };
 
@@ -52,14 +59,17 @@ const canonical = (v: unknown): string => {
   const keys = Object.keys(obj).sort();
   return `{${keys.map((k) => `${JSON.stringify(k)}:${canonical(obj[k])}`).join(",")}}`;
 };
-const playId = async (play: unknown): Promise<string> => {
-  const bytes = new TextEncoder().encode(canonical(play));
+// 6 bytes → 12 hex chars: short, shareable, collision-safe at app scale.
+const hashHex = async (v: unknown): Promise<string> => {
+  const bytes = new TextEncoder().encode(canonical(v));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
-  // 6 bytes → 12 hex chars: short, shareable, collision-safe at app scale.
   return [...new Uint8Array(digest).slice(0, 6)]
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 };
+/** A play's id hashes its whole authored request, so re-saving an identical
+    play is a harmless overwrite (natural dedupe) and equal plays share a link. */
+const playId = (play: unknown): Promise<string> => hashHex(play);
 
 /* ---------- route definitions (zod input + output) ---------- */
 const teamsRoute = createRoute({
@@ -162,6 +172,50 @@ const getPlayRoute = createRoute({
   },
 });
 
+/* ---------- play library (Tinybird-backed) ----------
+   Every simulation is ingested to Tinybird (run summary + play-by-play) with its
+   full Replay stored to R2. The library reads that history back: list the plays
+   run on a given matchup, then replay any one exactly. */
+const SimIdParamSchema = z.object({
+  id: z.string().openapi({ param: { name: "id", in: "path" }, example: "9f8e7d6c5b4a" }),
+});
+
+const librarySearchRoute = createRoute({
+  method: "post",
+  path: "/library/search",
+  summary: "List prior plays run on a matchup (exact config match), newest first",
+  tags: ["library"],
+  request: {
+    body: {
+      required: true,
+      content: { "application/json": { schema: z.object({ config: GameConfigSchema }) } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Outcome summaries of every recorded play on this exact config",
+      content: { "application/json": { schema: z.array(PlaySummarySchema) } },
+    },
+    500: { description: "Analytics read error", ...jsonError },
+  },
+});
+
+const libraryReplayRoute = createRoute({
+  method: "get",
+  path: "/library/{id}",
+  summary: "Load a recorded play by sim id — its authored request plus exact replay",
+  tags: ["library"],
+  request: { params: SimIdParamSchema },
+  responses: {
+    200: {
+      description: "The recorded play: authored request + the replay that ran",
+      content: { "application/json": { schema: StoredPlaySchema } },
+    },
+    404: { description: "No recorded play with that id", ...jsonError },
+    500: { description: "Analytics/artifact read error", ...jsonError },
+  },
+});
+
 /* ---------- app ---------- */
 const base = new OpenAPIHono<{ Bindings: Bindings }>({
   // Surface zod validation failures as clean 400s.
@@ -206,9 +260,12 @@ const routes = base
     const req = c.req.valid("json");
     const replay = simulatePossession(req);
     // Best-effort analytics: record what was simulated — the config, the
-    // movement sequence, and the play-by-play — to Tinybird. Fire-and-forget
-    // via waitUntil so it never blocks or fails the response, and no-op when
-    // TINYBIRD_* aren't configured (e.g. local dev).
+    // movement sequence, the play-by-play, and (new) the full Replay — to
+    // Tinybird + R2. This is what powers the matchup play library: ingest stamps
+    // each run with a config hash + outcome summary, and stores the exact Replay
+    // to R2 so it can be played back faithfully. Fire-and-forget via waitUntil so
+    // it never blocks or fails the response, and no-op when TINYBIRD_* aren't
+    // configured (e.g. local dev — the library is then simply empty).
     const host = process.env.TINYBIRD_HOST;
     const token = process.env.TINYBIRD_TOKEN;
     if (host && token) {
@@ -216,6 +273,15 @@ const routes = base
         putMovements: async (artifact) => {
           const key = `simulations/${artifact.sim_id}/movements.json`;
           await c.env.SIMULATION_ARTIFACTS.put(key, JSON.stringify(artifact), {
+            httpMetadata: { contentType: "application/json" },
+          });
+          return key;
+        },
+        // Persist the whole Replay so the library can reproduce a possession
+        // exactly (the R2 movement rows drop per-frame scoreboard/clock).
+        putReplay: async (rep, simId) => {
+          const key = `simulations/${simId}/replay.json`;
+          await c.env.SIMULATION_ARTIFACTS.put(key, JSON.stringify(rep), {
             httpMetadata: { contentType: "application/json" },
           });
           return key;
@@ -236,6 +302,45 @@ const routes = base
     // stored plays are kept until manually removed.
     await c.env.PLAYS.put(`play:${id}`, JSON.stringify(play));
     return c.json({ id }, 200);
+  })
+  .openapi(librarySearchRoute, async (c) => {
+    const { config } = c.req.valid("json");
+    const host = process.env.TINYBIRD_HOST;
+    const token = process.env.TINYBIRD_TOKEN;
+    // No analytics backend → an empty library (the graceful local-dev default).
+    if (!host || !token) return c.json([], 200);
+    const matchup = await hashConfig(config);
+    const rows = await listPlaysForConfig({ host, token }, matchup);
+    const plays = rows.map((r) => ({
+      simId: r.sim_id,
+      result: r.result,
+      points: r.points,
+      offense: r.offense,
+      offenseTeam: r.offense_team,
+      timestamp: r.timestamp,
+    }));
+    return c.json(z.array(PlaySummarySchema).parse(plays), 200);
+  })
+  .openapi(libraryReplayRoute, async (c) => {
+    const { id } = c.req.valid("param");
+    const host = process.env.TINYBIRD_HOST;
+    const token = process.env.TINYBIRD_TOKEN;
+    if (!host || !token) return c.json({ error: "Play library not configured" }, 404);
+    // The run row carries the verbatim config/plan/setup; the exact Replay lives
+    // in R2. Recombine them into a StoredPlay the client can stage + play back.
+    const run = await getRunConfig({ host, token }, id);
+    if (!run) return c.json({ error: "Play not found" }, 404);
+    const artifact = await c.env.SIMULATION_ARTIFACTS.get(`simulations/${id}/replay.json`);
+    if (!artifact) return c.json({ error: "Replay artifact missing" }, 404);
+    const replay = ReplaySchema.parse(JSON.parse(await artifact.text()));
+    const request = SimulateRequestSchema.parse({
+      config: JSON.parse(run.config),
+      offense: run.offense,
+      plan: JSON.parse(run.plan),
+      defPlan: JSON.parse(run.def_plan),
+      setup: JSON.parse(run.setup),
+    });
+    return c.json(StoredPlaySchema.parse({ request, replay }), 200);
   })
   .openapi(getPlayRoute, async (c) => {
     const { id } = c.req.valid("param");
