@@ -153,6 +153,7 @@ export const LabSetupSchema = z.object({
   labTeam: z.number(),
   gameClock: z.number(),
   startShotClock: z.number().min(1).max(24).default(24),
+  live: z.boolean().default(false),
 });
 
 export const SimulateRequestSchema = z.object({

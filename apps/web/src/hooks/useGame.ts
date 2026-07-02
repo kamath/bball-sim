@@ -61,6 +61,9 @@ export interface PossessionOpts {
   plan: TeamPlan | null;
   /** compiled instructions for the defending team; null = base man-to-man */
   defPlan: TeamPlan | null;
+  /** start the possession live (the offense already holds the ball in the
+      frontcourt, clock running) instead of from an inbound. */
+  live?: boolean;
   /** an authored formation to restore onto the staged possession (exact
       positions + routes). Used to preload a shared play; null = a clean stage. */
   setup?: LabSetup | null;
@@ -314,6 +317,11 @@ export function useGame(initialConfig: GameConfig) {
         dragP.pos.x = clamp(c.x, -2.5, COURT.W + 2.5);
         dragP.pos.y = clamp(c.y, -2.5, COURT.H + 2.5);
         dragP.vel = { x: 0, y: 0 };
+        // the ball rides with whoever's holding it (live start: the handler)
+        const lab = labGameRef.current;
+        if (lab && lab.ball.holder === dragP) {
+          lab.ball.pos = { x: dragP.pos.x, y: dragP.pos.y };
+        }
         // the route starts where the player stands, so drag its base along
         if (dragP.path && dragP.path.length) {
           dragP.path[0] = { x: dragP.pos.x, y: dragP.pos.y };
@@ -485,7 +493,10 @@ export function useGame(initialConfig: GameConfig) {
           setLabEvents((prev) => (prev.length > 100 ? [e, ...prev.slice(0, 100)] : [e, ...prev]));
         },
       });
-      lab.runPossession({ offense: opts.offense, plan: opts.plan, defPlan: opts.defPlan });
+      // A preloaded setup carries its own start mode; otherwise honor the
+      // control. labReplaySetup below rebuilds it exactly when a setup exists.
+      const live = opts.setup?.live ?? opts.live ?? false;
+      lab.runPossession({ offense: opts.offense, plan: opts.plan, defPlan: opts.defPlan, live });
       // Preloading a shared play: drop every player back on his authored spot
       // and route (labReplaySetup unfreezes, so re-freeze right after).
       if (opts.setup) {

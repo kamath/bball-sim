@@ -97,6 +97,9 @@ export interface LabSetup {
   gameClock: number;
   /** shot-clock seconds the possession starts with (1–24) */
   startShotClock: number;
+  /** start the possession live (the offense already holds the ball in the
+      frontcourt, clock running) instead of from an inbound. */
+  live: boolean;
 }
 
 /* Half-court spots in "attack space": ax = feet from hoop toward
@@ -294,7 +297,9 @@ export class Game {
   lastShotTeam!: number;
   claims!: Map<number, number>[];
   deadTimer = 0;
-  inb!: { inbounder: Player; receiver: Player; spot: Vec };
+  /** the current inbound (inbounder + receiver + spot), or null when the
+      possession started live (mid-possession, no inbound). */
+  inb!: { inbounder: Player; receiver: Player; spot: Vec } | null;
   tactics!: Tactics[];
   /** roles for the team currently on offense. `focus` is the primary scoring
       option; `scorers` is every option in priority order. `screener` is kept
@@ -323,6 +328,9 @@ export class Game {
   fastBreak = 0;
   /** single-possession lab mode: which team's possession we're watching */
   lab: { team: number } | null = null;
+  /** lab: the staged possession started live (mid-possession) rather than from
+      an inbound. Captured into / restored from the LabSetup. */
+  labStartLive = false;
   frozen = false;
   /** inbound deferred by a lab freeze, replayed on resume */
   labPending: { team: number; spot: Vec; sc: number } | null = null;
@@ -567,7 +575,7 @@ export class Game {
         } else if (
           // don't throw it in until the inbounder is actually standing
           // at the out-of-bounds spot (forced release as a backstop)
-          dist(this.inb.inbounder.pos, this.inb.spot) < 2 ||
+          dist(this.inb!.inbounder.pos, this.inb!.spot) < 2 ||
           this.deadTimer < -4
         ) {
           this.releaseInbound();
@@ -2134,7 +2142,7 @@ export class Game {
   }
 
   releaseInbound() {
-    const { inbounder, receiver } = this.inb;
+    const { inbounder, receiver } = this.inb!;
     this.phase = "live";
     const from = { x: inbounder.pos.x, y: inbounder.pos.y };
     const to = { x: receiver.pos.x, y: receiver.pos.y };
@@ -2150,6 +2158,56 @@ export class Game {
     };
   }
 
+  /** Start a possession already in progress: instead of an inbound, the
+      offense's initiator holds the ball at the top of the frontcourt and the
+      shot clock is already running. The rest of the formation mirrors
+      setupInbound so a live start and an inbound start stage the same set. */
+  setupLive(team: number, opts: { sc: number }) {
+    this.phase = "live";
+    this.deadTimer = 0;
+    this.possession = team;
+    this.shotClock = opts.sc;
+    this.shotClockActive = true;
+    this.ball.flight = null;
+    this.ball.loose = null;
+    this.lastPasser = null;
+    this.sinceCatch = 0;
+    this.fastBreak = 0;
+    this.screen = null;
+    this.tipoff = false;
+    this.claims = [new Map(), new Map()];
+    this.setRoles(team);
+    for (const t of this.teams) {
+      for (const p of t.players) {
+        p.driving = false;
+        p.allowOOB = false;
+        p.spotIdx = -1;
+        p.spotTimer = 0;
+        p.rollTimer = 0;
+        p.zoneIdx = -1;
+        p.path = null;
+        p.pathIdx = 0;
+      }
+    }
+    const tp = this.teams[team].players;
+    // the initiator brings it up already holding the ball, at the top of the key
+    const handler = this.roles.handler ?? tp[0];
+    handler.moveTarget = this.spotPos(team, { ax: 24.5, ay: 0, cat: "three" });
+    handler.decisionTimer = rand(0.25, 0.6);
+    const rest = tp.filter((p) => p !== handler);
+    for (const p of rest) {
+      const fixed = this.assignTargets.get(p.id);
+      if (fixed) {
+        p.moveTarget = this.spotPos(p.team, fixed);
+        continue;
+      }
+      this.assignSpot(p);
+      p.moveTarget = this.spotPos(p.team, SPOTS[p.spotIdx]);
+    }
+    this.inb = null;
+    this.ball.holder = handler;
+  }
+
   /* ---------- possession lab ---------- */
   static SCHEME_LABELS: Record<DefScheme, string> = {
     man: "man-to-man",
@@ -2159,7 +2217,8 @@ export class Game {
 
   /** Run a single scripted possession: the offense optimizes for its
       compiled plan (or just flows) against the defense's plan/scheme.
-      Starts from a clean inbound formation. The sim freezes when the
+      Starts from a clean inbound formation — or, when `live`, mid-possession
+      with the offense already holding the ball. The sim freezes when the
       possession ends. */
   runPossession(opts: {
     offense: number;
@@ -2169,6 +2228,8 @@ export class Game {
     scorers?: number[];
     start?: InboundLoc;
     inbounderSlot?: number | null;
+    /** skip the inbound and start with the ball live in the frontcourt */
+    live?: boolean;
   }) {
     if (this.over) return;
     this.lab = { team: opts.offense };
@@ -2187,8 +2248,13 @@ export class Game {
       `LAB — ${this.teams[opts.offense].name} possession against ${Game.SCHEME_LABELS[defScheme]}`,
       null
     );
-    const spot = this.labInboundSpot(opts.offense, opts.start ?? opts.plan?.inbound ?? "side-top");
-    this.setupInbound(opts.offense, spot, { sc: 24 });
+    this.labStartLive = !!opts.live;
+    if (opts.live) {
+      this.setupLive(opts.offense, { sc: 24 });
+    } else {
+      const spot = this.labInboundSpot(opts.offense, opts.start ?? opts.plan?.inbound ?? "side-top");
+      this.setupInbound(opts.offense, spot, { sc: 24 });
+    }
     // drill-style start: snap everyone straight into formation instead
     // of jogging there, so the inbound always looks traditional
     this.deadTimer = rand(0.8, 1.2);
@@ -2235,6 +2301,7 @@ export class Game {
       labTeam: this.lab ? this.lab.team : this.possession,
       gameClock: this.gameClock,
       startShotClock: Math.min(24, Math.max(1, Math.round(this.shotClock))),
+      live: this.labStartLive,
     };
   }
 
@@ -2250,9 +2317,13 @@ export class Game {
     // pin the same inbounder so the exact play replays (auto-pick would
     // otherwise re-resolve against wherever everyone ended up)
     this.tactics[snap.labTeam].inbounderSlot = snap.inbounderSlot;
-    this.setupInbound(snap.labTeam, { ...snap.inbSpot }, {
-      sc: Math.min(24, Math.max(1, snap.startShotClock ?? 24)),
-    });
+    this.labStartLive = !!snap.live;
+    const sc = Math.min(24, Math.max(1, snap.startShotClock ?? 24));
+    if (snap.live) {
+      this.setupLive(snap.labTeam, { sc });
+    } else {
+      this.setupInbound(snap.labTeam, { ...snap.inbSpot }, { sc });
+    }
     for (const f of snap.players) {
       const p = this.teams[f.team].players[f.slot];
       p.pos = { ...f.pos };

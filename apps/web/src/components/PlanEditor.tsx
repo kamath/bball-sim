@@ -118,9 +118,9 @@ interface PlanEditorProps {
 export function PlanEditor({ names, context, initialPlan, disabled, onApply, className }: PlanEditorProps) {
   const [draft, setDraft] = useState<TeamPlan>(initialPlan ?? BLANK);
   // context gates which sections show: a defense plan has no initiator /
-  // scoring options / actions / inbound / tempo, only scheme + emphasis.
+  // scoring options / actions / tempo, only scheme + emphasis. (Inbound settings
+  // live above the editor, in the possession-start controls.)
   const showOffense = context === "lab-offense";
-  const showInbound = context === "lab-offense";
   const showDefScheme = context === "lab-defense";
   const showPace = context === "lab-offense";
   const tendKeys = context === "lab-offense" ? OFF_TENDS : DEF_TENDS;
@@ -419,33 +419,6 @@ export function PlanEditor({ names, context, initialPlan, disabled, onApply, cla
                 </Select>
               </Field>
             )}
-          </div>
-        )}
-
-        {/* Inbound (lab offense only) */}
-        {showInbound && (
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Inbound from">
-              <Select
-                value={draft.inbound ?? NONE}
-                onValueChange={(v) => patch({ inbound: v === NONE ? null : (v as TeamPlan["inbound"]) })}
-              >
-                <SelectTrigger className="h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>Default</SelectItem>
-                  <SelectItem value="full">Full court</SelectItem>
-                  <SelectItem value="side-top">Sideline (top)</SelectItem>
-                  <SelectItem value="side-bot">Sideline (bottom)</SelectItem>
-                  <SelectItem value="base-top">Baseline (top)</SelectItem>
-                  <SelectItem value="base-bot">Baseline (bottom)</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Inbounder">
-              <SlotSelect value={draft.inbounderSlot} onChange={(inbounderSlot) => patch({ inbounderSlot })} names={names} placeholder="Any" />
-            </Field>
           </div>
         )}
       </div>

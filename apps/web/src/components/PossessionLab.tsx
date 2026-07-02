@@ -10,21 +10,37 @@
    freezes when it ends; nothing outside the sandbox is touched.
    ============================================================ */
 import { useEffect, useRef, useState } from "react";
-import { Eraser, MousePointer2, PenLine, X } from "lucide-react";
+import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { PlanEditor } from "@/components/PlanEditor";
-import type { SimulateRequest, TeamPlan } from "@repo/shared";
-import type { BoxTeam, LabPhase, LabTool, PossessionOpts } from "@/hooks/useGame";
+import type { InboundLoc, SimulateRequest, TeamPlan } from "@repo/shared";
+import type { BoxTeam, LabPhase, PossessionOpts } from "@/hooks/useGame";
+
+const NONE = "none";
+const BLANK_PLAN: TeamPlan = {
+  handlerSlot: null,
+  scorerSlots: [],
+  actions: [],
+  directives: [],
+  defScheme: null,
+  pace: null,
+  inbound: null,
+  inbounderSlot: null,
+};
 
 interface PossessionLabProps {
   teams: BoxTeam[];
   labPhase: LabPhase;
-  labTool: LabTool;
   onStage: (opts: PossessionOpts) => void;
-  onToolChange: (t: LabTool) => void;
-  onClearPaths: () => void;
   /** fired the first time the user touches the config, so the caller can set
       the matchup's previous plays aside and reveal the court to re-simulate. */
   onEdit?: () => void;
@@ -38,14 +54,21 @@ const lastName = (n: string) => n.split(" ").slice(-1)[0];
 export function PossessionLab({
   teams,
   labPhase,
-  labTool,
   onStage,
-  onToolChange,
-  onClearPaths,
   onEdit,
   initialPlay,
 }: PossessionLabProps) {
   const [offense, setOffense] = useState(initialPlay?.offense ?? 0);
+  // start from an inbound (default) or live, already holding the ball. Flipping
+  // this re-stages the formation (the two starts place the ball differently).
+  const [live, setLive] = useState(initialPlay?.setup?.live ?? false);
+  // inbound spot + inbounder — where the possession starts when it's inbounded.
+  // Owned here (above the plan editors) and merged onto the offense plan at stage
+  // time, so switching offense or editing the plan never clobbers them.
+  const [inbound, setInbound] = useState<InboundLoc | null>(initialPlay?.plan?.inbound ?? null);
+  const [inbounderSlot, setInbounderSlot] = useState<number | null>(
+    initialPlay?.plan?.inbounderSlot ?? null
+  );
   // the hand-built plans currently staged on the court
   const [plans, setPlans] = useState<{ plan: TeamPlan | null; defPlan: TeamPlan | null }>({
     plan: initialPlay?.plan ?? null,
@@ -59,12 +82,18 @@ export function PossessionLab({
   // (offense/plan change) restages clean. Consumed once, then dropped.
   const pendingSetup = useRef(initialPlay?.setup ?? null);
 
-  // any change to the offense or the staged plans re-stages a clean
-  // formation. once the play is running the config controls lock.
+  // any change to the offense, the staged plans, the start mode, or the inbound
+  // spot re-stages a clean formation. once the play is running the config locks.
   useEffect(() => {
-    onStage({ offense, plan: plans.plan, defPlan: plans.defPlan, setup: pendingSetup.current });
+    // fold the inbound spot / inbounder onto the offense plan (they don't apply
+    // when starting live, so they're dropped in that case).
+    let plan = plans.plan;
+    if (!live && (inbound !== null || inbounderSlot !== null)) {
+      plan = { ...(plan ?? BLANK_PLAN), inbound, inbounderSlot };
+    }
+    onStage({ offense, plan, defPlan: plans.defPlan, live, setup: pendingSetup.current });
     pendingSetup.current = null;
-  }, [offense, plans, onStage]);
+  }, [offense, plans, live, inbound, inbounderSlot, onStage]);
 
   if (teams.length < 2) return null;
   const configurable = labPhase !== "running";
@@ -95,8 +124,9 @@ export function PossessionLab({
               onClick={() => {
                 onEdit?.();
                 setOffense(ti);
-                // plans reference roster slots of a specific side
+                // plans + inbounder reference roster slots of a specific side
                 setPlans({ plan: null, defPlan: null });
+                setInbounderSlot(null);
                 setBuildSeed((s) => s + 1); // re-seed hand editors for the new side
               }}
             >
@@ -106,6 +136,90 @@ export function PossessionLab({
           ))}
         </div>
       </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label>Possession start</Label>
+        <div className="flex gap-1.5">
+          <Button
+            size="sm"
+            variant={!live ? "secondary" : "outline"}
+            disabled={!configurable}
+            onClick={() => {
+              onEdit?.();
+              setLive(false);
+            }}
+          >
+            Inbound
+          </Button>
+          <Button
+            size="sm"
+            variant={live ? "secondary" : "outline"}
+            disabled={!configurable}
+            onClick={() => {
+              onEdit?.();
+              setLive(true);
+            }}
+          >
+            Live ball
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {live
+            ? "The offense starts with the ball in the frontcourt, shot clock running."
+            : "The possession starts from an inbound."}
+        </p>
+      </div>
+
+      {/* Inbound spot + inbounder — only when starting from an inbound. Kept above
+          the plan editors so it reads as part of how the possession begins. */}
+      {!live && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label>Inbound from</Label>
+            <Select
+              value={inbound ?? NONE}
+              onValueChange={(v) => {
+                onEdit?.();
+                setInbound(v === NONE ? null : (v as InboundLoc));
+              }}
+            >
+              <SelectTrigger className="h-8" disabled={!configurable}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Default</SelectItem>
+                <SelectItem value="full">Full court</SelectItem>
+                <SelectItem value="side-top">Sideline (top)</SelectItem>
+                <SelectItem value="side-bot">Sideline (bottom)</SelectItem>
+                <SelectItem value="base-top">Baseline (top)</SelectItem>
+                <SelectItem value="base-bot">Baseline (bottom)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Inbounder</Label>
+            <Select
+              value={inbounderSlot === null ? NONE : String(inbounderSlot)}
+              onValueChange={(v) => {
+                onEdit?.();
+                setInbounderSlot(v === NONE ? null : Number(v));
+              }}
+            >
+              <SelectTrigger className="h-8" disabled={!configurable}>
+                <SelectValue placeholder="Any" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Any</SelectItem>
+                {offNames.map((n, i) => (
+                  <SelectItem key={i} value={String(i)}>
+                    {n}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      )}
 
       {/* forceMount keeps both editors alive so switching sides never drops an
           in-progress plan or re-stages the formation. */}
@@ -143,42 +257,6 @@ export function PossessionLab({
           />
         </TabsContent>
       </Tabs>
-
-      <div className="flex flex-col gap-1.5">
-        <Label>Court tools</Label>
-        <div className="flex gap-1.5">
-          <Button
-            size="sm"
-            variant={labTool === "move" ? "secondary" : "outline"}
-            onClick={() => onToolChange("move")}
-            disabled={labPhase !== "staged"}
-          >
-            <MousePointer2 className="mr-1.5 size-3.5" /> Move
-          </Button>
-          <Button
-            size="sm"
-            variant={labTool === "path" ? "secondary" : "outline"}
-            onClick={() => onToolChange("path")}
-            disabled={labPhase !== "staged"}
-          >
-            <PenLine className="mr-1.5 size-3.5" /> Draw path
-          </Button>
-          <Button size="sm" variant="outline" onClick={onClearPaths} disabled={labPhase !== "staged"}>
-            <Eraser className="mr-1.5 size-3.5" /> Clear paths
-          </Button>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          {labPhase === "staged"
-            ? labTool === "move"
-              ? "Drag any player to set his starting spot."
-              : "Drag from an offensive player to draw the route he'll run."
-            : labPhase === "running"
-              ? "Play in progress — watch the court."
-              : labPhase === "ended"
-                ? "Possession over — re-run it, or tweak the plan to restage."
-                : "Build both teams' plans, then run the play."}
-        </p>
-      </div>
 
       {/* Clears the plan for whichever side is open in the editor above. */}
       <div className="flex justify-end">

@@ -12,6 +12,7 @@ import { savePlay } from "@/lib/api";
 import type { GameConfig, PlayerConfig, SimulateRequest } from "@repo/shared";
 import { BatchOutcomes } from "./BatchOutcomes";
 import { Court } from "./Court";
+import { CourtTools } from "./CourtTools";
 import { Feed } from "./Feed";
 import { PossessionLab } from "./PossessionLab";
 import { RosterEditor } from "./RosterEditor";
@@ -154,6 +155,17 @@ export function Simulator({
     </>
   );
 
+  // Staging tools live under the court board in edit mode; the results view is
+  // playback-only, so it has no tools.
+  const courtTools = isResults ? null : (
+    <CourtTools
+      labPhase={game.labPhase}
+      labTool={game.labTool}
+      onToolChange={game.setLabTool}
+      onClearPaths={game.clearLabPaths}
+    />
+  );
+
   // Back from the results view to the editor for that same config (or the fresh
   // editor if we arrived without a saved id).
   const onBack = () => {
@@ -174,6 +186,7 @@ export function Simulator({
       offense: initialPlay.offense,
       plan: initialPlay.plan,
       defPlan: initialPlay.defPlan,
+      live: initialPlay.setup?.live ?? false,
       setup: initialPlay.setup ?? null,
     });
   }, [isResults, initialPlay, game.version, stageLab]);
@@ -307,10 +320,7 @@ export function Simulator({
                 key={game.version}
                 teams={game.boxTeams}
                 labPhase={game.labPhase}
-                labTool={game.labTool}
                 onStage={game.stageLab}
-                onToolChange={game.setLabTool}
-                onClearPaths={game.clearLabPaths}
                 initialPlay={game.version === 0 ? initialPlay : undefined}
               />
             </ScrollArea>
@@ -335,6 +345,7 @@ export function Simulator({
             onExport={game.exportReplay}
             onSetSpeed={game.setSpeed}
             runControl={runControl}
+            tools={courtTools}
           />
           {isResults && (
             <Feed
