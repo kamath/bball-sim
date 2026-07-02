@@ -12,6 +12,7 @@ import { fetchSimulation } from "@/lib/api";
 import type { TeamPlan } from "@repo/shared";
 import type {
   GameConfig,
+  LabSetup,
   Player,
   Replay,
   ReplayFrame,
@@ -50,6 +51,9 @@ export interface PossessionOpts {
   plan: TeamPlan | null;
   /** compiled instructions for the defending team; null = base man-to-man */
   defPlan: TeamPlan | null;
+  /** an authored formation to restore onto the staged possession (exact
+      positions + routes). Used to preload a shared play; null = a clean stage. */
+  setup?: LabSetup | null;
 }
 
 export interface BoxPlayer {
@@ -461,6 +465,12 @@ export function useGame(initialConfig: GameConfig) {
         },
       });
       lab.runPossession({ offense: opts.offense, plan: opts.plan, defPlan: opts.defPlan });
+      // Preloading a shared play: drop every player back on his authored spot
+      // and route (labReplaySetup unfreezes, so re-freeze right after).
+      if (opts.setup) {
+        lab.labReplaySetup(opts.setup);
+        labSetupRef.current = opts.setup; // so an immediate re-run replays it exactly
+      }
       lab.frozen = true; // hold the formation for editing
       labGameRef.current = lab;
       // surface the engine's resolved roles so the UI can show them
@@ -557,6 +567,23 @@ export function useGame(initialConfig: GameConfig) {
     });
   }, [runSimulation, simulating]);
 
+  /** Snapshot the currently staged (or just-run) play as a SimulateRequest,
+      for persisting to a shareable /play/{id} link. Returns null if nothing is
+      staged yet. */
+  const capturePlay = useCallback((): SimulateRequest | null => {
+    const lab = labGameRef.current;
+    if (!lab || labPhaseRef.current === "idle" || labPhaseRef.current === "config") return null;
+    const setup = lab.labCaptureSetup();
+    const offense = setup.labTeam;
+    return {
+      config: configRef.current,
+      offense,
+      plan: lab.tactics[offense].plan ?? null,
+      defPlan: lab.tactics[1 - offense].plan ?? null,
+      setup,
+    };
+  }, []);
+
   /** Erase all authored motion paths on the staged formation. */
   const clearLabPaths = useCallback(() => {
     const lab = labGameRef.current;
@@ -610,6 +637,7 @@ export function useGame(initialConfig: GameConfig) {
     stageLab,
     runLab,
     reRunLab,
+    capturePlay,
     clearLabPaths,
     setLabTool,
     getConfig: () => configRef.current,

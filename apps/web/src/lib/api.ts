@@ -51,3 +51,18 @@ export async function fetchSimulation(input: SimulateRequest) {
   if (!res.ok) throw await toError(res);
   return res.json(); // inferred: Replay
 }
+
+/** Persist a staged play to KV; returns its content-addressed id for building
+    a shareable /play/{id} link. */
+export async function savePlay(input: SimulateRequest) {
+  const res = await api.api.plays.$post({ json: input });
+  if (!res.ok) throw await toError(res);
+  return res.json(); // inferred: { id: string }
+}
+
+/** Load a previously stored play config by id. */
+export async function fetchPlay(id: string) {
+  const res = await api.api.plays[":id"].$get({ param: { id } });
+  if (!res.ok) throw await toError(res);
+  return res.json(); // inferred: SimulateRequest
+}

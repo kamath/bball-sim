@@ -9,12 +9,12 @@
    and draw the routes they run. Run plays the possession and
    freezes when it ends; nothing outside the sandbox is touched.
    ============================================================ */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Eraser, MousePointer2, PenLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { PlanEditor } from "@/components/PlanEditor";
-import type { TeamPlan } from "@repo/shared";
+import type { SimulateRequest, TeamPlan } from "@repo/shared";
 import type { BoxTeam, LabPhase, LabTool, PossessionOpts } from "@/hooks/useGame";
 
 interface PossessionLabProps {
@@ -28,6 +28,9 @@ interface PossessionLabProps {
   onReRun: () => void;
   onToolChange: (t: LabTool) => void;
   onClearPaths: () => void;
+  /** a shared play to preload: seeds the offense + plans and restores the
+      authored formation onto the first stage. */
+  initialPlay?: SimulateRequest;
 }
 
 const lastName = (n: string) => n.split(" ").slice(-1)[0];
@@ -43,21 +46,26 @@ export function PossessionLab({
   onReRun,
   onToolChange,
   onClearPaths,
+  initialPlay,
 }: PossessionLabProps) {
-  const [offense, setOffense] = useState(0);
+  const [offense, setOffense] = useState(initialPlay?.offense ?? 0);
   // the hand-built plans currently staged on the court
   const [plans, setPlans] = useState<{ plan: TeamPlan | null; defPlan: TeamPlan | null }>({
-    plan: null,
-    defPlan: null,
+    plan: initialPlay?.plan ?? null,
+    defPlan: initialPlay?.defPlan ?? null,
   });
   const [rev, setRev] = useState(0); // bump to re-stage with the same plans
   // bumped whenever the offense flips so the editors re-seed from staged plans
   const [buildSeed, setBuildSeed] = useState(0);
+  // a preloaded formation is applied to the FIRST stage only; any later edit
+  // (offense/plan change) restages clean. Consumed once, then dropped.
+  const pendingSetup = useRef(initialPlay?.setup ?? null);
 
   // any change to the offense or the staged plans re-stages a clean
   // formation. once the play is running the config controls lock.
   useEffect(() => {
-    onStage({ offense, plan: plans.plan, defPlan: plans.defPlan });
+    onStage({ offense, plan: plans.plan, defPlan: plans.defPlan, setup: pendingSetup.current });
+    pendingSetup.current = null;
   }, [offense, plans, rev, onStage]);
 
   if (teams.length < 2) return null;

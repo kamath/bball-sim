@@ -8,7 +8,15 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true
-  }
+  },
+  // Shareable play configs live in KV, keyed by a content hash of the payload
+  // (see POST /api/plays). `wrangler dev` simulates this locally via miniflare,
+  // so the placeholder id below is fine for dev; before deploying, run
+  //   wrangler kv namespace create PLAYS
+  // and paste the returned id here (and a preview_id for `wrangler dev --remote`).
+  "kv_namespaces": [
+    { "binding": "PLAYS", "id": "REPLACE_WITH_KV_NAMESPACE_ID" }
+  ]
   // Secrets (set with `wrangler secret put <NAME>`, or via .dev.vars locally):
   //   BALLDONTLIE_API_KEY, CORS_ORIGIN
 }

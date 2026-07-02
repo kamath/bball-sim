@@ -1,10 +1,13 @@
 "use client";
 import { useState } from "react";
+import { Check, Share2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
 import { useGame } from "@/hooks/useGame";
 import { useTeams } from "@/lib/queries";
-import type { GameConfig } from "@repo/shared";
+import { savePlay } from "@/lib/api";
+import type { GameConfig, SimulateRequest } from "@repo/shared";
 import { Court } from "./Court";
 import { Feed } from "./Feed";
 import { PossessionLab } from "./PossessionLab";
@@ -14,15 +17,34 @@ import { TeamPicker } from "./TeamPicker";
 
 interface SimulatorProps {
   initialConfig: GameConfig;
+  /** a shared play (from /play/{id}) to preload into the lab on first mount. */
+  initialPlay?: SimulateRequest;
 }
 
-export function Simulator({ initialConfig }: SimulatorProps) {
+export function Simulator({ initialConfig, initialPlay }: SimulatorProps) {
   const game = useGame(initialConfig);
   const { data: teams = [] } = useTeams();
   const { snapshot } = game;
   const names = snapshot.teamMeta;
   // active sub-tab within the lab panel (designer / roster edit / team picker)
   const [labTab, setLabTab] = useState("lab");
+  // share-link state: idle → the saved /play/{id} url once copied
+  const [shareStatus, setShareStatus] = useState<"idle" | "saving" | "copied">("idle");
+
+  const onShare = async () => {
+    const play = game.capturePlay();
+    if (!play) return;
+    setShareStatus("saving");
+    try {
+      const { id } = await savePlay(play);
+      const url = `${window.location.origin}/play/${id}`;
+      await navigator.clipboard?.writeText(url).catch(() => {});
+      setShareStatus("copied");
+      window.setTimeout(() => setShareStatus("idle"), 2500);
+    } catch {
+      setShareStatus("idle");
+    }
+  };
 
   return (
     <div className="mx-auto flex max-w-[1400px] flex-col gap-4 p-4">
@@ -34,6 +56,25 @@ export function Simulator({ initialConfig }: SimulatorProps) {
             {names[0].name} vs {names[1].name}
           </span>
         )}
+        <Button
+          variant="outline"
+          size="sm"
+          className={`gap-2 ${names.length === 2 ? "" : "ml-auto"}`}
+          onClick={onShare}
+          disabled={shareStatus === "saving"}
+          title="Save this play and copy a shareable link"
+        >
+          {shareStatus === "copied" ? (
+            <Check data-icon="inline-start" />
+          ) : (
+            <Share2 data-icon="inline-start" />
+          )}
+          {shareStatus === "copied"
+            ? "Link copied"
+            : shareStatus === "saving"
+              ? "Saving…"
+              : "Share play"}
+        </Button>
       </header>
 
       <ShotClock snapshot={snapshot} />
@@ -82,6 +123,7 @@ export function Simulator({ initialConfig }: SimulatorProps) {
                 onReRun={game.reRunLab}
                 onToolChange={game.setLabTool}
                 onClearPaths={game.clearLabPaths}
+                initialPlay={game.version === 0 ? initialPlay : undefined}
               />
             </ScrollArea>
           </TabsContent>
