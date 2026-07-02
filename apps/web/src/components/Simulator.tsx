@@ -86,10 +86,15 @@ export function Simulator({ initialConfig, initialPlay }: SimulatorProps) {
             playing={game.playing}
             speed={game.speed}
             canReplay={game.hasReplay}
+            labPhase={game.labPhase}
+            simulating={game.simulating}
             onTogglePlay={game.togglePlay}
             onReplay={game.replay}
             onExport={game.exportReplay}
             onSetSpeed={game.setSpeed}
+            onRun={game.runLab}
+            onReRun={game.reRunLab}
+            onReset={game.resetLab}
           />
           <Feed
             events={game.labEvents}
@@ -117,10 +122,7 @@ export function Simulator({ initialConfig, initialPlay }: SimulatorProps) {
                 labPhase={game.labPhase}
                 labTool={game.labTool}
                 labRoles={game.labRoles}
-                simulating={game.simulating}
                 onStage={game.stageLab}
-                onRun={game.runLab}
-                onReRun={game.reRunLab}
                 onToolChange={game.setLabTool}
                 onClearPaths={game.clearLabPaths}
                 initialPlay={game.version === 0 ? initialPlay : undefined}

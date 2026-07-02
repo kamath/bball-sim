@@ -567,6 +567,21 @@ export function useGame(initialConfig: GameConfig) {
     });
   }, [runSimulation, simulating]);
 
+  /** Re-stage a clean formation with the plans already applied — drops any
+      manual player drags / drawn routes and any recorded possession. Mirrors
+      the old "Reset formation" button, now driven from the Court controls. */
+  const resetLab = useCallback(() => {
+    const lab = labGameRef.current;
+    if (!lab || (labPhaseRef.current !== "staged" && labPhaseRef.current !== "ended")) return;
+    const offense = lab.labCaptureSetup().labTeam;
+    stageLab({
+      offense,
+      plan: lab.tactics[offense].plan ?? null,
+      defPlan: lab.tactics[1 - offense].plan ?? null,
+      setup: null,
+    });
+  }, [stageLab]);
+
   /** Snapshot the currently staged (or just-run) play as a SimulateRequest,
       for persisting to a shareable /play/{id} link. Returns null if nothing is
       staged yet. */
@@ -637,6 +652,7 @@ export function useGame(initialConfig: GameConfig) {
     stageLab,
     runLab,
     reRunLab,
+    resetLab,
     capturePlay,
     clearLabPaths,
     setLabTool,

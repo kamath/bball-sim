@@ -22,10 +22,7 @@ interface PossessionLabProps {
   labPhase: LabPhase;
   labTool: LabTool;
   labRoles: (string | null)[];
-  simulating: boolean;
   onStage: (opts: PossessionOpts) => void;
-  onRun: () => void;
-  onReRun: () => void;
   onToolChange: (t: LabTool) => void;
   onClearPaths: () => void;
   /** a shared play to preload: seeds the offense + plans and restores the
@@ -40,10 +37,7 @@ export function PossessionLab({
   labPhase,
   labTool,
   labRoles,
-  simulating,
   onStage,
-  onRun,
-  onReRun,
   onToolChange,
   onClearPaths,
   initialPlay,
@@ -54,7 +48,6 @@ export function PossessionLab({
     plan: initialPlay?.plan ?? null,
     defPlan: initialPlay?.defPlan ?? null,
   });
-  const [rev, setRev] = useState(0); // bump to re-stage with the same plans
   // bumped whenever the offense flips so the editors re-seed from staged plans
   const [buildSeed, setBuildSeed] = useState(0);
   // a preloaded formation is applied to the FIRST stage only; any later edit
@@ -66,7 +59,7 @@ export function PossessionLab({
   useEffect(() => {
     onStage({ offense, plan: plans.plan, defPlan: plans.defPlan, setup: pendingSetup.current });
     pendingSetup.current = null;
-  }, [offense, plans, rev, onStage]);
+  }, [offense, plans, onStage]);
 
   if (teams.length < 2) return null;
   const configurable = labPhase !== "running";
@@ -169,29 +162,6 @@ export function PossessionLab({
                 ? "Possession over — re-run it, or tweak the plan to restage."
                 : "Build both teams' plans, then run the play."}
         </p>
-      </div>
-
-      <div className="flex gap-2">
-        {labPhase === "ended" ? (
-          <Button onClick={onReRun} disabled={simulating} className="flex-1">
-            {simulating ? "Simulating…" : "Re-run play"}
-          </Button>
-        ) : (
-          <Button
-            onClick={onRun}
-            disabled={labPhase !== "staged" || simulating}
-            className="flex-1"
-          >
-            {simulating ? "Simulating…" : "Run play"}
-          </Button>
-        )}
-        <Button
-          variant="outline"
-          onClick={() => setRev((r) => r + 1)}
-          disabled={!configurable || simulating}
-        >
-          Reset formation
-        </Button>
       </div>
     </div>
   );

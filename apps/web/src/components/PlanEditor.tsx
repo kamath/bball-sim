@@ -7,7 +7,7 @@
    edit and run through sanitizePlan() on apply, so half-finished
    rows never reach the engine.
    ============================================================ */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Trash2, X } from "lucide-react";
 import {
   sanitizePlan,
@@ -41,6 +41,18 @@ const BLANK: TeamPlan = {
   inbound: null,
   inbounderSlot: null,
 };
+
+/** True when the draft carries no coaching intent — treated as "no plan". */
+const isBlankPlan = (d: TeamPlan) =>
+  !d.summary &&
+  d.handlerSlot === null &&
+  d.scorerSlots.length === 0 &&
+  d.actions.length === 0 &&
+  d.directives.length === 0 &&
+  !d.defScheme &&
+  !d.pace &&
+  !d.inbound &&
+  d.inbounderSlot === null;
 
 const NONE = "none";
 const ACTION_TYPES: { value: PlanActionType; label: string }[] = [
@@ -119,6 +131,23 @@ export function PlanEditor({ names, context, initialPlan, disabled, onApply, cla
 
   const patch = (p: Partial<TeamPlan>) => setDraft((d) => ({ ...d, ...p }));
   const preview = useMemo(() => sanitizePlan(draft), [draft]);
+
+  // The plan auto-adjusts as you edit — no "Apply" step. Debounce so a slider
+  // drag or typing doesn't re-stage the formation on every tick. The initial
+  // draft is skipped so a preloaded shared formation isn't restaged away.
+  const onApplyRef = useRef(onApply);
+  onApplyRef.current = onApply;
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (!seeded.current) {
+      seeded.current = true;
+      return;
+    }
+    const id = setTimeout(() => {
+      onApplyRef.current(isBlankPlan(draft) ? null : sanitizePlan(draft));
+    }, 250);
+    return () => clearTimeout(id);
+  }, [draft]);
 
   const toggleScorer = (slot: number) =>
     setDraft((d) => {
@@ -437,18 +466,9 @@ export function PlanEditor({ names, context, initialPlan, disabled, onApply, cla
         {/* Live preview */}
         <PlanSummary title="Preview" plan={preview} names={names} />
 
-        {/* Apply / clear */}
-        <div className="flex gap-2">
-          <Button className="flex-1" onClick={() => onApply(sanitizePlan(draft))}>
-            Apply plan
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              setDraft(BLANK);
-              onApply(null);
-            }}
-          >
+        {/* The plan applies automatically as you edit; Clear resets it. */}
+        <div className="flex justify-end">
+          <Button variant="outline" onClick={() => setDraft(BLANK)}>
             <X className="mr-1.5 size-3.5" /> Clear
           </Button>
         </div>
