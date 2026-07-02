@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { useGame } from "@/hooks/useGame";
-import { useConfigPlays, useTeams } from "@/lib/queries";
+import { useBuildMatchup, useConfigPlays, useTeams } from "@/lib/queries";
 import { fetchLibraryPlay, savePlay } from "@/lib/api";
 import type { GameConfig, PlayerConfig, SimulateRequest } from "@repo/shared";
 import { Court } from "./Court";
@@ -15,7 +15,6 @@ import { PlayLibrary } from "./PlayLibrary";
 import { PossessionLab } from "./PossessionLab";
 import { RosterEditor } from "./RosterEditor";
 import { ShotClock } from "./ShotClock";
-import { TeamPicker } from "./TeamPicker";
 
 interface SimulatorProps {
   initialConfig: GameConfig;
@@ -40,6 +39,41 @@ export function Simulator({ initialConfig, initialPlay }: SimulatorProps) {
   const [rosters, setRosters] = useState<[PlayerConfig[], PlayerConfig[]]>(() =>
     rostersOf(initialConfig)
   );
+  // which NBA team fills each side, in [home, away] order — drives the per-side
+  // team pickers that replaced the old "Real NBA matchup" card. Resolved from
+  // the loaded config's abbreviations once the team list arrives.
+  const [teamIds, setTeamIds] = useState<[number | null, number | null]>([null, null]);
+  const [teamLoading, setTeamLoading] = useState<0 | 1 | null>(null);
+  const matchup = useBuildMatchup();
+  useEffect(() => {
+    if (!teams.length) return;
+    setTeamIds((prev) => {
+      if (prev[0] != null || prev[1] != null) return prev; // already resolved / picked
+      const cfg = game.getConfig();
+      const idOf = (abbr?: string) => teams.find((t) => t.abbr === abbr)?.id ?? null;
+      return [idOf(cfg.teamA.abbr), idOf(cfg.teamB.abbr)];
+    });
+  }, [teams, game]);
+
+  // Pick a real NBA team for one side and rebuild that lineup, keeping the
+  // other side as-is. Builds once both sides are known.
+  const selectTeam = async (idx: 0 | 1, teamId: number) => {
+    const other = teamIds[idx === 0 ? 1 : 0];
+    const nextIds: [number | null, number | null] =
+      idx === 0 ? [teamId, other] : [other, teamId];
+    setTeamIds(nextIds);
+    if (nextIds[0] == null || nextIds[1] == null) return; // wait for both sides
+    setTeamLoading(idx);
+    try {
+      const config = await matchup.mutateAsync({ teamAId: nextIds[0], teamBId: nextIds[1] });
+      game.newGame(config);
+      setRosters(rostersOf(config));
+    } catch {
+      /* leave the prior matchup in place on failure */
+    } finally {
+      setTeamLoading(null);
+    }
+  };
   // share-link state: idle → the saved /play/{id} url once copied
   const [shareStatus, setShareStatus] = useState<"idle" | "saving" | "copied">("idle");
   const queryClient = useQueryClient();
@@ -145,31 +179,26 @@ export function Simulator({ initialConfig, initialPlay }: SimulatorProps) {
             </TabsTrigger>
           </TabsList>
 
-          {/* Teams: load a real matchup up top, then edit whoever's on the
-              court below — the roster editor reflects the loaded lineup. */}
+          {/* Teams: pick each side's real NBA team right on its roster header,
+              then swap teammates or edit whoever's on the court. */}
           <TabsContent value="teams" className="flex-1 min-h-0">
             <ScrollArea className="h-full pr-3">
-              <div className="flex flex-col gap-4">
-                <TeamPicker
-                  teams={teams}
-                  onLoad={(config) => {
-                    game.newGame(config);
-                    setRosters(rostersOf(config));
-                  }}
-                />
-                <RosterEditor
-                  teams={game.boxTeams}
-                  rosters={rosters}
-                  onEdit={(...args) => {
-                    startEditing();
-                    game.editPlayer(...args);
-                  }}
-                  onSwap={(...args) => {
-                    startEditing();
-                    game.swapPlayer(...args);
-                  }}
-                />
-              </div>
+              <RosterEditor
+                teams={game.boxTeams}
+                rosters={rosters}
+                teamOptions={teams}
+                selectedTeamIds={teamIds}
+                teamLoading={teamLoading}
+                onSelectTeam={selectTeam}
+                onEdit={(...args) => {
+                  startEditing();
+                  game.editPlayer(...args);
+                }}
+                onSwap={(...args) => {
+                  startEditing();
+                  game.swapPlayer(...args);
+                }}
+              />
             </ScrollArea>
           </TabsContent>
 
