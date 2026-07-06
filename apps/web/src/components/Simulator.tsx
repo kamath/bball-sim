@@ -1,17 +1,19 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, Check, Play, Share2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { useGame } from "@/hooks/useGame";
 import { useBuildMatchup, useTeams } from "@/lib/queries";
 import { savePlay } from "@/lib/api";
+import type { PossessionFilter } from "@/lib/possessionFilters";
 import type { GameConfig, PlayerConfig, SimulateRequest } from "@repo/shared";
 import { AggregatePanel } from "./AggregatePanel";
-import { BatchOutcomes } from "./BatchOutcomes";
+import { PossessionList } from "./PossessionList";
 import { Court } from "./Court";
 import { CourtTools } from "./CourtTools";
 import { Feed } from "./Feed";
@@ -38,10 +40,6 @@ const rostersOf = (cfg: GameConfig): [PlayerConfig[], PlayerConfig[]] => [
   cfg.teamA.roster ?? [],
   cfg.teamB.roster ?? [],
 ];
-
-/** Underlined tab-trigger styling shared by the results Aggregate/Possessions tabs. */
-const resultTabClass =
-  "rounded-none border-b-2 border-transparent px-1 pb-2.5 pt-0 text-base font-semibold text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none";
 
 /** Upper bound on simulations per Run, matching the API's MAX_BATCH. */
 const MAX_RUNS = 500;
@@ -108,6 +106,34 @@ export function Simulator({
   const [runCount, setRunCount] = useState(runs ?? 100);
   // persisting the play + routing to its results view
   const [submitting, setSubmitting] = useState(false);
+
+  // ---- Results view: aggregate → possession filtering ----
+  // Active filters authored by clicking aggregate elements (union semantics: a
+  // possession shows if it matches ANY active filter). Toggling by id lets the
+  // same aggregate element flip its filter on and off.
+  const [filters, setFilters] = useState<PossessionFilter[]>([]);
+  const activeIds = useMemo(() => new Set(filters.map((f) => f.id)), [filters]);
+  const toggleFilter = useCallback((f: PossessionFilter) => {
+    setFilters((prev) =>
+      prev.some((x) => x.id === f.id) ? prev.filter((x) => x.id !== f.id) : [...prev, f]
+    );
+  }, []);
+  const removeFilter = useCallback(
+    (id: string) => setFilters((prev) => prev.filter((x) => x.id !== id)),
+    []
+  );
+  const clearFilters = useCallback(() => setFilters([]), []);
+
+  // Whether a single possession is opened for replay (its play-by-play under the
+  // court) vs. the browsable list. Selecting a run opens it; Back returns.
+  const [detailOpen, setDetailOpen] = useState(false);
+  const openPossession = useCallback(
+    (simId: string) => {
+      setDetailOpen(true);
+      void game.playRun(simId);
+    },
+    [game]
+  );
 
   const canRun = game.labPhase === "staged" || game.labPhase === "ended";
 
@@ -270,33 +296,24 @@ export function Simulator({
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[420px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
         {showPlays ? (
           game.simOutcomes.length > 0 && game.simArtifact ? (
-            <Tabs defaultValue="aggregate" className="flex min-h-0 flex-col">
-              <TabsList className="h-auto w-full justify-start gap-6 rounded-none border-b border-border bg-transparent p-0">
-                <TabsTrigger value="aggregate" className={resultTabClass}>
-                  Aggregate
-                </TabsTrigger>
-                <TabsTrigger value="possessions" className={resultTabClass}>
-                  Possessions
-                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                    {game.simOutcomes.length}
-                  </span>
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="aggregate" className="flex-1 min-h-0 pt-3">
-                <ScrollArea className="h-full pr-3">
-                  <AggregatePanel artifact={game.simArtifact} />
-                </ScrollArea>
-              </TabsContent>
-              <TabsContent value="possessions" className="flex-1 min-h-0 pt-3">
-                <BatchOutcomes
-                  outcomes={game.simOutcomes}
-                  activeSimId={game.activeSimId}
-                  durationMs={game.simDurationMs}
-                  onSelect={game.playRun}
-                  className="min-h-0 flex-1"
+            <div className="flex min-h-0 flex-col">
+              <div className="flex items-baseline gap-2 border-b border-border pb-2.5">
+                <h2 className="text-base font-semibold">Aggregate</h2>
+                <span className="text-sm text-muted-foreground">
+                  over {game.simOutcomes.length} possessions
+                </span>
+                <span className="ml-auto text-xs text-muted-foreground">
+                  Click any stat to filter possessions
+                </span>
+              </div>
+              <ScrollArea className="min-h-0 flex-1 pr-3 pt-3">
+                <AggregatePanel
+                  artifact={game.simArtifact}
+                  activeIds={activeIds}
+                  onToggle={toggleFilter}
                 />
-              </TabsContent>
-            </Tabs>
+              </ScrollArea>
+            </div>
           ) : (
             <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
               {game.simulating ? "Simulating…" : "Preparing simulation…"}
@@ -361,33 +378,64 @@ export function Simulator({
         </Tabs>
         )}
 
-        <div className="relative flex flex-col justify-center gap-4">
-          <ShotClock
-            snapshot={snapshot}
-            editable={!isResults}
-            value={game.labShotClock}
-            onChange={game.setLabShotClock}
-          />
-          <Court
-            canvasRef={game.canvasRef}
-            playing={game.playing}
-            speed={game.speed}
-            canReplay={game.hasReplay}
-            onTogglePlay={game.togglePlay}
-            onReplay={game.replay}
-            onExport={game.exportReplay}
-            onSetSpeed={game.setSpeed}
-            runControl={runControl}
-            tools={courtTools}
-          />
-          {isResults && (
-            <Feed
-              events={game.labEvents}
+        <div className={cn("relative flex min-h-0 flex-col gap-4", !isResults && "justify-center")}>
+          {/* court + shot clock — kept compact in results so the possession
+              explorer beneath it has room, full-width in the edit designer. */}
+          <div className={cn("flex flex-col gap-4", isResults && "mx-auto w-full max-w-[620px] shrink-0")}>
+            <ShotClock
               snapshot={snapshot}
-              title="Possession play-by-play"
-              className="h-[220px]"
+              editable={!isResults}
+              value={game.labShotClock}
+              onChange={game.setLabShotClock}
             />
-          )}
+            <Court
+              canvasRef={game.canvasRef}
+              playing={game.playing}
+              speed={game.speed}
+              canReplay={game.hasReplay}
+              onTogglePlay={game.togglePlay}
+              onReplay={game.replay}
+              onExport={game.exportReplay}
+              onSetSpeed={game.setSpeed}
+              runControl={runControl}
+              tools={courtTools}
+            />
+          </div>
+
+          {/* under the court: browse the batch's possessions (filtered by the
+              aggregate), or the play-by-play of the one opened for replay. */}
+          {isResults &&
+            (detailOpen ? (
+              <div className="flex min-h-0 flex-1 flex-col gap-1.5">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="-ml-2 w-fit gap-2"
+                  onClick={() => setDetailOpen(false)}
+                  title="Back to the possession list"
+                >
+                  <ArrowLeft data-icon="inline-start" />
+                  Back to possessions
+                </Button>
+                <Feed
+                  events={game.labEvents}
+                  snapshot={snapshot}
+                  title="Possession play-by-play"
+                  className="min-h-0 flex-1"
+                />
+              </div>
+            ) : game.simArtifact ? (
+              <PossessionList
+                possessions={game.simArtifact.possessions}
+                filters={filters}
+                activeSimId={game.activeSimId}
+                durationMs={game.simDurationMs}
+                onSelect={openPossession}
+                onRemoveFilter={removeFilter}
+                onClear={clearFilters}
+                className="flex-1"
+              />
+            ) : null)}
         </div>
       </main>
     </div>
