@@ -1,30 +1,38 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "backend",
-  "main": "src/index.ts",
-  "compatibility_date": "2026-07-01",
-  // nodejs_compat (with a compat date >= 2025-04-01) populates process.env from
-  // vars + secrets, which is how @repo/api reads BALLDONTLIE_API_KEY.
-  "compatibility_flags": ["nodejs_compat"],
-  "observability": {
-    "enabled": true
-  },
-  // Shareable play configs live in KV, keyed by a content hash of the payload
-  // (see POST /api/plays). `wrangler dev` simulates this locally via miniflare,
-  // so the placeholder id below is fine for dev; before deploying, run
-  //   wrangler kv namespace create PLAYS
-  // and paste the returned id here (and a preview_id for `wrangler dev --remote`).
-  "kv_namespaces": [
-    { "binding": "PLAYS", "id": "REPLACE_WITH_KV_NAMESPACE_ID" }
-  ],
-  // Each /api/simulate run writes its full Replay (frames = the movement paths,
-  // plus the play-by-play) to R2 under its simId; GET /api/simulate/{id} reads it
-  // back so a chosen run can be played on the court. No analytics persistence.
-  // Create before deploy:
-  //   wrangler r2 bucket create simulation-artifacts
-  "r2_buckets": [
-    { "binding": "SIMULATION_ARTIFACTS", "bucket_name": "simulation-artifacts" }
-  ]
-  // Secrets (set with `wrangler secret put <NAME>`, or via .dev.vars locally):
-  //   BALLDONTLIE_API_KEY, CORS_ORIGIN
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "backend",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-07-01",
+	// nodejs_compat (with a compat date >= 2025-04-01) populates process.env from
+	// vars + secrets, which is how @repo/api reads BALLDONTLIE_API_KEY.
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"observability": {
+		"enabled": true
+	},
+	// Shareable play configs live in KV, keyed by a content hash of the payload
+	// (see POST /api/plays). `wrangler dev` simulates this locally via miniflare,
+	// so the placeholder id below is fine for dev; before deploying, run
+	//   wrangler kv namespace create PLAYS
+	// and paste the returned id here (and a preview_id for `wrangler dev --remote`).
+	"kv_namespaces": [
+		{
+			"binding": "PLAYS",
+			"id": "f762116b868441cba64f29ef730e0ff6"
+		}
+	],
+	// Each /api/simulate run writes its full Replay (frames = the movement paths,
+	// plus the play-by-play) to R2 under its simId; GET /api/simulate/{id} reads it
+	// back so a chosen run can be played on the court. No analytics persistence.
+	// Create before deploy:
+	//   wrangler r2 bucket create simulation-artifacts
+	"r2_buckets": [
+		{
+			"binding": "SIMULATION_ARTIFACTS",
+			"bucket_name": "simulation-artifacts"
+		}
+	]
+	// Secrets (set with `wrangler secret put <NAME>`, or via .dev.vars locally):
+	//   BALLDONTLIE_API_KEY, CORS_ORIGIN
 }

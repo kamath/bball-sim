@@ -10,6 +10,7 @@ import { useGame } from "@/hooks/useGame";
 import { useBuildMatchup, useTeams } from "@/lib/queries";
 import { savePlay } from "@/lib/api";
 import type { GameConfig, PlayerConfig, SimulateRequest } from "@repo/shared";
+import { AggregatePanel } from "./AggregatePanel";
 import { BatchOutcomes } from "./BatchOutcomes";
 import { Court } from "./Court";
 import { CourtTools } from "./CourtTools";
@@ -37,6 +38,10 @@ const rostersOf = (cfg: GameConfig): [PlayerConfig[], PlayerConfig[]] => [
   cfg.teamA.roster ?? [],
   cfg.teamB.roster ?? [],
 ];
+
+/** Underlined tab-trigger styling shared by the results Aggregate/Possessions tabs. */
+const resultTabClass =
+  "rounded-none border-b-2 border-transparent px-1 pb-2.5 pt-0 text-base font-semibold text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none";
 
 /** Upper bound on simulations per Run, matching the API's MAX_BATCH. */
 const MAX_RUNS = 500;
@@ -264,14 +269,34 @@ export function Simulator({
 
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[420px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
         {showPlays ? (
-          game.simOutcomes.length > 0 ? (
-            <BatchOutcomes
-              outcomes={game.simOutcomes}
-              activeSimId={game.activeSimId}
-              durationMs={game.simDurationMs}
-              onSelect={game.playRun}
-              className="min-h-0 flex-1"
-            />
+          game.simOutcomes.length > 0 && game.simArtifact ? (
+            <Tabs defaultValue="aggregate" className="flex min-h-0 flex-col">
+              <TabsList className="h-auto w-full justify-start gap-6 rounded-none border-b border-border bg-transparent p-0">
+                <TabsTrigger value="aggregate" className={resultTabClass}>
+                  Aggregate
+                </TabsTrigger>
+                <TabsTrigger value="possessions" className={resultTabClass}>
+                  Possessions
+                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                    {game.simOutcomes.length}
+                  </span>
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="aggregate" className="flex-1 min-h-0 pt-3">
+                <ScrollArea className="h-full pr-3">
+                  <AggregatePanel artifact={game.simArtifact} />
+                </ScrollArea>
+              </TabsContent>
+              <TabsContent value="possessions" className="flex-1 min-h-0 pt-3">
+                <BatchOutcomes
+                  outcomes={game.simOutcomes}
+                  activeSimId={game.activeSimId}
+                  durationMs={game.simDurationMs}
+                  onSelect={game.playRun}
+                  className="min-h-0 flex-1"
+                />
+              </TabsContent>
+            </Tabs>
           ) : (
             <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
               {game.simulating ? "Simulating…" : "Preparing simulation…"}

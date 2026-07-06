@@ -263,6 +263,8 @@ interface Flight {
   assist?: Player | null;
   defD?: number;
   defName?: string | null;
+  /** global id of the nearest defender at release, for contest credit */
+  defenderId?: number;
   prob?: number;
   /** the shooter was fouled on a made basket — one FT coming */
   andOne?: boolean;
@@ -2015,6 +2017,7 @@ export class Game {
         h.driving = false;
         this.emit("block", `${def.name} swats ${h.name}'s shot away!`, def.team, [
           { playerId: def.id, team: def.team, kind: "block", relatedPlayerId: h.id },
+          { playerId: def.id, team: def.team, kind: "contest", relatedPlayerId: h.id },
           { playerId: h.id, team: h.team, kind: "shot_miss", blocked: true, relatedPlayerId: def.id },
         ]);
         // swatted ball flies away from the hoop
@@ -2103,6 +2106,7 @@ export class Game {
       assist,
       defD: sv.defD,
       defName: def ? def.name.split(" ").slice(-1)[0] : null,
+      defenderId: def ? def.id : undefined,
       prob,
       andOne: fouled && made,
       pullUp,
@@ -2129,6 +2133,12 @@ export class Game {
     const T = this.teams[sh.team];
     sh.stats.fga++;
     if (f.pts === 3) sh.stats.tpa++;
+    // credit the nearest defender with a contest when the shot was challenged
+    // (contested/smothered = defender within 4.5 ft at release)
+    const contest: ContribInput[] =
+      f.defenderId != null && f.defD != null && f.defD < 4.5
+        ? [{ playerId: f.defenderId, team: 1 - sh.team, kind: "contest", relatedPlayerId: sh.id }]
+        : [];
     if (f.made) {
       T.score += f.pts!;
       sh.stats.fgm++;
@@ -2163,6 +2173,7 @@ export class Game {
               },
             ]
           : []),
+        ...contest,
       ]);
       if (f.andOne) {
         this.emit("foul", `${sh.name} is fouled on the finish — and one!`, 1 - sh.team, [
@@ -2188,6 +2199,7 @@ export class Game {
           openness: f.defD != null ? opennessOf(f.defD) : undefined,
           pullUp: f.pullUp,
         },
+        ...contest,
       ]);
       if (this.gameClock <= 0) {
         this.endQuarter();

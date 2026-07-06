@@ -230,6 +230,7 @@ export type ContribKind =
   | "turnover"
   | "steal"
   | "block"
+  | "contest"
   | "off_reb"
   | "def_reb"
   | "recover"

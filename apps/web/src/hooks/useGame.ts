@@ -19,6 +19,7 @@ import type {
   Replay,
   ReplayFrame,
   ReplayMeta,
+  SimArtifact,
   SimEvent,
   SimulateRequest,
   Vec,
@@ -157,6 +158,9 @@ export function useGame(initialConfig: GameConfig) {
   const [simulating, setSimulating] = useState(false); // backend sim in flight
   // one outcome per run of the last batch; length > 1 means a Run ×N was fired
   const [simOutcomes, setSimOutcomes] = useState<SimOutcome[]>([]);
+  // the full normalized analytics artifact for the last batch (players +
+  // possessions + events + contributions + aggregate), for the Aggregate tab
+  const [simArtifact, setSimArtifact] = useState<SimArtifact | null>(null);
   // simId of the run currently loaded on the court, so the list can mark it
   const [activeSimId, setActiveSimId] = useState<string | null>(null);
   // wall-clock ms the last batch took to compute (round-trip to the backend)
@@ -736,6 +740,7 @@ export function useGame(initialConfig: GameConfig) {
       setLabEvents([]);
       // a fresh formation drops any prior batch distribution
       setSimOutcomes([]);
+      setSimArtifact(null);
       setActiveSimId(null);
       setSimDurationMs(null);
       modeRef.current = "lab";
@@ -858,6 +863,7 @@ export function useGame(initialConfig: GameConfig) {
     async (payload: SimulateRequest, count = 1) => {
       setSimulating(true);
       setSimOutcomes([]);
+      setSimArtifact(null);
       setActiveSimId(null);
       setSimDurationMs(null);
       try {
@@ -867,8 +873,9 @@ export function useGame(initialConfig: GameConfig) {
         const started = performance.now();
         const artifact = await fetchSimulation(payload, count);
         setSimDurationMs(performance.now() - started);
-        // The batch now returns one normalized analytics artifact; the outcome
-        // list the UI shows is its per-possession feature rows.
+        // The batch now returns one normalized analytics artifact: keep the whole
+        // thing for the Aggregate tab, and derive the outcome list from its rows.
+        setSimArtifact(artifact);
         setSimOutcomes(
           artifact.possessions.map((r) => ({ simId: r.simId, result: r.result, points: r.points }))
         );
@@ -1020,6 +1027,7 @@ export function useGame(initialConfig: GameConfig) {
     hasReplay,
     simulating,
     simOutcomes,
+    simArtifact,
     activeSimId,
     simDurationMs,
     replay,

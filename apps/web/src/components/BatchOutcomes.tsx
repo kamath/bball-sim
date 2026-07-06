@@ -38,7 +38,7 @@ export function BatchOutcomes({
   const buckets = [...byPoints.entries()].sort((a, b) => a[0] - b[0]);
 
   return (
-    <div className="flex min-h-0 flex-col gap-1.5">
+    <div className="flex h-full min-h-0 flex-col gap-1.5">
       <Label>
         {n} possessions
         {durationMs != null && (
