@@ -299,7 +299,7 @@ export function Simulator({
               <div className="flex items-baseline gap-2 border-b border-border pb-2.5">
                 <h2 className="text-base font-semibold">Aggregate</h2>
                 <span className="text-sm text-muted-foreground">
-                  over {game.simOutcomes.length} possessions
+                  n={game.simOutcomes.length}
                 </span>
                 <span className="ml-auto text-xs text-muted-foreground">
                   Click any stat to filter possessions

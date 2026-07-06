@@ -281,6 +281,10 @@ interface Loose {
   isRebound: boolean;
   touchTeam: number;
   phase?: number;
+  /** the offensive passer whose pass was knocked loose — set when this loose
+      ball came from a deflected pass, so a defensive recovery can be credited
+      as a steal/turnover rather than a bare loose-ball recover. */
+  spilledBy?: Player;
   /** seconds the ball is still in the AIR off the rim — a rebound is caught
       at hand height during this window (the NBA board) and only hits the
       floor if nobody gets to it */
@@ -1923,6 +1927,7 @@ export class Game {
           timer: rand(0.4, 0.8),
           isRebound: false,
           touchTeam: o.team,
+          spilledBy: passer,
         };
         return true;
       }
@@ -2327,6 +2332,22 @@ export class Game {
           : `${win!.name} secures the defensive board`,
         win!.team,
         [{ playerId: win!.id, team: win!.team, kind: offBoard ? "off_reb" : "def_reb" }]
+      );
+    } else if (lb.spilledBy && win!.team !== lb.spilledBy.team) {
+      // the defense recovered a pass it knocked loose: a live-ball turnover,
+      // credited as a steal so the possession resolves decisively rather than
+      // reading as "No result".
+      const passer = lb.spilledBy;
+      win!.stats.stl++;
+      passer.stats.tov++;
+      this.emit(
+        "steal",
+        `${win!.name} pounces on the loose ball — stolen from ${passer.name}!`,
+        win!.team,
+        [
+          { playerId: win!.id, team: win!.team, kind: "steal", relatedPlayerId: passer.id },
+          { playerId: passer.id, team: passer.team, kind: "turnover", relatedPlayerId: win!.id },
+        ]
       );
     } else {
       this.emit("recover", `${win!.name} comes up with the loose ball`, win!.team, [
