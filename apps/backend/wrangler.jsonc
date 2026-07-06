@@ -1,6 +1,6 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "backend",
+	"name": "clankerball-backend",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-07-01",
 	// nodejs_compat (with a compat date >= 2025-04-01) populates process.env from

@@ -1,6 +1,6 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "web",
+	"name": "clankerball-frontend",
 	"compatibility_date": "2026-07-01",
 	// Static-assets-only Worker: serves the Vite build in ./dist. There's no
 	// `main` because there's no server code — Cloudflare serves the assets
@@ -12,5 +12,5 @@
 	}
 	// The API base URL is baked in at build time via VITE_API_URL (see
 	// src/lib/api.ts). Build for prod with:
-	//   VITE_API_URL=https://backend.anirudhk.workers.dev pnpm build
+	//   VITE_API_URL=https://clankerball-backend.anirudhk.workers.dev pnpm build
 }
