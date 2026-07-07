@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "infisical run --env=dev --path=/apps/web -- vite",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "wrangler deploy",
+    "deploy": "infisical run --env=prod --path=/apps/web -- vite build && wrangler deploy",
     "cf-typegen": "wrangler types",
     "typecheck": "tsc --noEmit"
   },

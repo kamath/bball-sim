@@ -9,6 +9,7 @@
     "dev:backend": "turbo run dev --filter=@repo/backend",
     "build": "turbo run build",
     "preview": "turbo run preview --filter=@repo/web",
+    "deploy": "turbo run deploy",
     "deploy:backend": "turbo run deploy --filter=@repo/backend",
     "typecheck": "turbo run typecheck"
   },

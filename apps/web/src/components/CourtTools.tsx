@@ -32,7 +32,9 @@ const TOOLS: { tool: LabTool; label: string; icon: typeof PenLine; title: string
 export function CourtTools({ labPhase, labTool, onToolChange, onClear }: CourtToolsProps) {
   const staged = labPhase === "staged";
   return (
-    <div className="flex items-center gap-1 rounded-md border p-1">
+    // On phones the six tools wrap into a tidy 3-column grid (aligned rows, no
+    // ragged gaps); at sm+ they collapse back to a single inline row.
+    <div className="grid grid-cols-3 gap-1 rounded-md border p-1 sm:flex sm:items-center">
       {TOOLS.map(({ tool, label, icon: Icon, title }) => (
         <Button
           key={tool}

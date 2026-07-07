@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useGame } from "@/hooks/useGame";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useBuildMatchup, useTeams } from "@/lib/queries";
 import { savePlay } from "@/lib/api";
 import type { PossessionFilter } from "@/lib/possessionFilters";
@@ -55,6 +56,7 @@ export function Simulator({
 }: SimulatorProps) {
   const navigate = useNavigate();
   const isResults = view === "results";
+  const isMobile = useIsMobile();
   const game = useGame(initialConfig);
   const { data: teams = [] } = useTeams();
   const { snapshot } = game;
@@ -196,6 +198,73 @@ export function Simulator({
     />
   );
 
+  // ---- Shared editor panels ----
+  // Extracted so the desktop split-pane and the mobile tabbed editor render the
+  // exact same Teams / Play Lab / Court content — one source, two layouts.
+  const tabTrigger =
+    "rounded-none border-b-2 border-transparent px-1 pb-2.5 pt-0 text-base font-semibold text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none";
+
+  const teamsPanel = (
+    <ScrollArea className="h-full pr-3">
+      <RosterEditor
+        teams={game.boxTeams}
+        rosters={rosters}
+        teamOptions={teams}
+        selectedTeamIds={teamIds}
+        teamLoading={teamLoading}
+        onSelectTeam={selectTeam}
+        onEdit={game.editPlayer}
+        onSwap={game.swapPlayer}
+      />
+    </ScrollArea>
+  );
+
+  const labPanel = (
+    <ScrollArea className="h-full pr-3">
+      <PossessionLab
+        key={game.version}
+        teams={game.boxTeams}
+        labPhase={game.labPhase}
+        onStage={game.stageLab}
+        onUpdatePlans={game.updateLabPlans}
+        registerCourtEdit={game.registerCourtEdit}
+        hoveredAction={game.hoveredAction}
+        onHighlightAction={game.setActionHighlight}
+        /* the initial newGame bumps version 0→1 and remounts this designer —
+           keep the preloaded play through that remount so a saved config's
+           formation, routes, and plans survive. Later bumps (roster swaps)
+           reset to a clean designer. */
+        initialPlay={game.version <= 1 ? initialPlay : undefined}
+      />
+    </ScrollArea>
+  );
+
+  // court + shot clock — kept compact in results so the possession explorer
+  // beneath it has room, full-width in the edit designer.
+  const courtBoard = (
+    <div className={cn("flex flex-col gap-4", isResults && "mx-auto w-full max-w-[620px] shrink-0")}>
+      <ShotClock
+        snapshot={snapshot}
+        editable={!isResults}
+        value={game.labShotClock}
+        onChange={game.setLabShotClock}
+      />
+      <Court
+        canvasRef={game.canvasRef}
+        playing={game.playing}
+        speed={game.speed}
+        canReplay={game.hasReplay}
+        onTogglePlay={game.togglePlay}
+        onReplay={game.replay}
+        onExport={game.exportReplay}
+        onSetSpeed={game.setSpeed}
+        controls={!isResults}
+        runControl={runControl}
+        tools={courtTools}
+      />
+    </div>
+  );
+
   // Back from the results view to the editor for that same config (or the fresh
   // editor if we arrived without a saved id).
   const onBack = () => {
@@ -230,6 +299,26 @@ export function Simulator({
   // the court + play-by-play stay to play back a chosen run.
   const showPlays = isResults;
 
+  // On phones the desktop split-pane doesn't fit, so results becomes a
+  // single-screen drill-down driven by the existing filter/detail state:
+  //   aggregate → (pick a stat) → filtered plays → (pick a play) → replay.
+  // Each step has a Back button that pops one level (clearing the filter or
+  // closing the detail). Desktop keeps both panes side-by-side.
+  const mobileResults = isResults && isMobile;
+  const mobileStage: "aggregate" | "list" | "replay" = detailOpen
+    ? "replay"
+    : filter
+      ? "list"
+      : "aggregate";
+  const simReady = game.simOutcomes.length > 0 && !!game.simArtifact;
+
+  // On phones the editor's two-column split doesn't fit, so Teams / Play Lab and
+  // the court board become a single tab strip with the Court first and default —
+  // you set the play up on the court, then tab over to pick teams or author the
+  // possession. Desktop keeps the side-by-side layout.
+  const mobileEdit = !isResults && isMobile;
+  const [mobileEditTab, setMobileEditTab] = useState("court");
+
   const onShare = async () => {
     const play = game.capturePlay();
     if (!play) return;
@@ -246,7 +335,7 @@ export function Simulator({
   };
 
   return (
-    <div className="mx-auto flex h-screen max-w-[1400px] flex-col gap-4 overflow-hidden p-4">
+    <div className="mx-auto flex h-[100dvh] max-w-[1400px] flex-col gap-4 overflow-hidden p-4 max-lg:overflow-x-hidden">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-1">
         {isResults && (
           <Button
@@ -292,7 +381,166 @@ export function Simulator({
         </div>
       </header>
 
-      <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[420px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
+      <main
+        className={cn(
+          "min-h-0 flex-1",
+          isMobile
+            ? "flex flex-col"
+            : "grid grid-cols-1 gap-4 lg:grid-cols-[420px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]"
+        )}
+      >
+        {mobileEdit ? (
+          <Tabs
+            value={mobileEditTab}
+            onValueChange={setMobileEditTab}
+            className="flex min-h-0 flex-col"
+          >
+            <TabsList className="h-auto w-full justify-start gap-6 rounded-none border-b border-border bg-transparent p-0">
+              <TabsTrigger value="court" className={tabTrigger}>
+                Court
+              </TabsTrigger>
+              <TabsTrigger value="teams" className={tabTrigger}>
+                Teams
+              </TabsTrigger>
+              <TabsTrigger value="lab" className={tabTrigger}>
+                Play Lab
+              </TabsTrigger>
+            </TabsList>
+
+            {/* forceMount + hidden: the court's canvas must stay in the DOM
+                across tab switches (the renderer binds it once on mount), and
+                keeping the designer mounted preserves the staged possession. */}
+            {/* Plain overflow-y (not ScrollArea): the court canvas is
+                width:100%, and Radix's content-sized viewport would blow it
+                past the screen, hiding the right half where players stand. */}
+            <TabsContent
+              value="court"
+              forceMount
+              className="min-h-0 flex-1 overflow-y-auto pt-4 data-[state=inactive]:hidden"
+            >
+              {courtBoard}
+            </TabsContent>
+            <TabsContent value="teams" className="min-h-0 flex-1 pt-2">
+              {teamsPanel}
+            </TabsContent>
+            <TabsContent
+              value="lab"
+              forceMount
+              className="min-h-0 flex-1 pt-2 data-[state=inactive]:hidden"
+            >
+              {labPanel}
+            </TabsContent>
+          </Tabs>
+        ) : mobileResults ? (
+          <div className="flex min-h-0 flex-1 flex-col gap-3">
+            {/* Step 1 — the aggregate stats. Tapping a stat sets `filter`,
+                advancing to the filtered play list. */}
+            {mobileStage === "aggregate" &&
+              (simReady && game.simArtifact ? (
+                <>
+                  <div className="flex items-baseline gap-2 border-b border-border pb-2.5">
+                    <h2 className="text-base font-semibold">Aggregate</h2>
+                    <span className="text-sm text-muted-foreground">
+                      n={game.simOutcomes.length}
+                    </span>
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      Tap a stat to see plays
+                    </span>
+                  </div>
+                  <ScrollArea className="min-h-0 flex-1 pr-3 pt-3">
+                    <AggregatePanel
+                      artifact={game.simArtifact}
+                      activeIds={activeIds}
+                      onToggle={selectFilter}
+                    />
+                  </ScrollArea>
+                </>
+              ) : (
+                <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
+                  {game.simulating ? "Simulating…" : "Preparing simulation…"}
+                </div>
+              ))}
+
+            {/* Step 2 — the plays matching the tapped stat. Back clears the
+                filter and returns to the aggregate; tapping a play opens it. */}
+            {mobileStage === "list" && game.simArtifact && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="-ml-2 w-fit gap-2"
+                  onClick={clearFilter}
+                  title="Back to the aggregate stats"
+                >
+                  <ArrowLeft data-icon="inline-start" />
+                  Back to stats
+                </Button>
+                <PossessionList
+                  possessions={game.simArtifact.possessions}
+                  filters={filter ? [filter] : []}
+                  activeSimId={game.activeSimId}
+                  durationMs={game.simDurationMs}
+                  onSelect={openPossession}
+                  onRemoveFilter={clearFilter}
+                  onClear={clearFilter}
+                  className="min-h-0 flex-1"
+                />
+              </>
+            )}
+
+            {/* Step 3 — the replay of the chosen play. Back returns to the
+                filtered list. The court itself is mounted below at every stage
+                (the sim only boots once its canvas is in the DOM), so here we
+                just add the Back button and the play-by-play around it. */}
+            {mobileStage === "replay" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="-ml-2 w-fit gap-2"
+                onClick={() => setDetailOpen(false)}
+                title="Back to the matching plays"
+              >
+                <ArrowLeft data-icon="inline-start" />
+                Back to plays
+              </Button>
+            )}
+
+            {/* The court + shot clock stay mounted through all three steps so
+                `newGame` (which needs the canvas) boots the simulation on the
+                aggregate step; they're only made visible on the replay step. */}
+            <div className={cn("flex flex-col gap-3", mobileStage !== "replay" && "hidden")}>
+              <ShotClock
+                snapshot={snapshot}
+                editable={false}
+                value={game.labShotClock}
+                onChange={game.setLabShotClock}
+              />
+              <Court
+                canvasRef={game.canvasRef}
+                playing={game.playing}
+                speed={game.speed}
+                canReplay={game.hasReplay}
+                onTogglePlay={game.togglePlay}
+                onReplay={game.replay}
+                onExport={game.exportReplay}
+                onSetSpeed={game.setSpeed}
+                controls
+              />
+            </div>
+
+            {mobileStage === "replay" && (
+              <>
+                <Feed
+                  events={game.labEvents}
+                  snapshot={snapshot}
+                  title="Possession play-by-play"
+                  className="min-h-0 flex-1"
+                />
+              </>
+            )}
+          </div>
+        ) : (
+          <>
         {showPlays ? (
           game.simOutcomes.length > 0 && game.simArtifact ? (
             <div className="flex min-h-0 flex-col">
@@ -321,16 +569,10 @@ export function Simulator({
         ) : (
         <Tabs value={labTab} onValueChange={setLabTab} className="flex min-h-0 flex-col">
           <TabsList className="h-auto w-full justify-start gap-6 rounded-none border-b border-border bg-transparent p-0">
-            <TabsTrigger
-              value="teams"
-              className="rounded-none border-b-2 border-transparent px-1 pb-2.5 pt-0 text-base font-semibold text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-            >
+            <TabsTrigger value="teams" className={tabTrigger}>
               Teams
             </TabsTrigger>
-            <TabsTrigger
-              value="lab"
-              className="rounded-none border-b-2 border-transparent px-1 pb-2.5 pt-0 text-base font-semibold text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-            >
+            <TabsTrigger value="lab" className={tabTrigger}>
               Play Lab
             </TabsTrigger>
           </TabsList>
@@ -338,69 +580,20 @@ export function Simulator({
           {/* Teams: pick each side's real NBA team right on its roster header,
               then swap teammates or edit whoever's on the court. */}
           <TabsContent value="teams" className="flex-1 min-h-0">
-            <ScrollArea className="h-full pr-3">
-              <RosterEditor
-                teams={game.boxTeams}
-                rosters={rosters}
-                teamOptions={teams}
-                selectedTeamIds={teamIds}
-                teamLoading={teamLoading}
-                onSelectTeam={selectTeam}
-                onEdit={game.editPlayer}
-                onSwap={game.swapPlayer}
-              />
-            </ScrollArea>
+            {teamsPanel}
           </TabsContent>
 
           {/* forceMount keeps the staged possession alive while you peek at the
               Teams tab; a new matchup bumps game.version, which remounts the
               designer on a fresh formation. */}
           <TabsContent value="lab" forceMount className="flex-1 min-h-0 data-[state=inactive]:hidden">
-            <ScrollArea className="h-full pr-3">
-              <PossessionLab
-                key={game.version}
-                teams={game.boxTeams}
-                labPhase={game.labPhase}
-                onStage={game.stageLab}
-                onUpdatePlans={game.updateLabPlans}
-                registerCourtEdit={game.registerCourtEdit}
-                hoveredAction={game.hoveredAction}
-                onHighlightAction={game.setActionHighlight}
-                /* the initial newGame bumps version 0→1 and remounts this
-                   designer — keep the preloaded play through that remount so
-                   a saved config's formation, routes, and plans survive.
-                   Later bumps (roster swaps) reset to a clean designer. */
-                initialPlay={game.version <= 1 ? initialPlay : undefined}
-              />
-            </ScrollArea>
+            {labPanel}
           </TabsContent>
         </Tabs>
         )}
 
         <div className={cn("relative flex min-h-0 flex-col gap-4", !isResults && "justify-center")}>
-          {/* court + shot clock — kept compact in results so the possession
-              explorer beneath it has room, full-width in the edit designer. */}
-          <div className={cn("flex flex-col gap-4", isResults && "mx-auto w-full max-w-[620px] shrink-0")}>
-            <ShotClock
-              snapshot={snapshot}
-              editable={!isResults}
-              value={game.labShotClock}
-              onChange={game.setLabShotClock}
-            />
-            <Court
-              canvasRef={game.canvasRef}
-              playing={game.playing}
-              speed={game.speed}
-              canReplay={game.hasReplay}
-              onTogglePlay={game.togglePlay}
-              onReplay={game.replay}
-              onExport={game.exportReplay}
-              onSetSpeed={game.setSpeed}
-              controls={!isResults}
-              runControl={runControl}
-              tools={courtTools}
-            />
-          </div>
+          {courtBoard}
 
           {/* under the court: browse the batch's possessions (filtered by the
               aggregate), or the play-by-play of the one opened for replay. */}
@@ -437,6 +630,8 @@ export function Simulator({
               />
             ) : null)}
         </div>
+          </>
+        )}
       </main>
     </div>
   );
